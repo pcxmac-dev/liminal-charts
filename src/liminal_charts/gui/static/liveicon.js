@@ -46,11 +46,11 @@
     return button;
   }
 
-  // Whether the effect runs: live data is arriving, and an effect is chosen.
+  // Whether the effect runs: live data is arriving, an effect is chosen, and the icon is on the rail (not turned off).
   function update(receiving) {
     const button = mount();
     if (!button) return;
-    active = !!receiving && effect !== 'off';
+    active = !!receiving && effect !== 'off' && !button.hidden;
     button.classList.toggle('fx', active);
     button.dataset.effect = effect;  // the heartbeat dims the icon behind its trace
     if (active && !frame) frame = requestAnimationFrame(draw);

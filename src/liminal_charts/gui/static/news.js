@@ -46,7 +46,8 @@
           <div class="news-main">
             ${safeUrl(it.url) ? `<a href="${esc(safeUrl(it.url))}" target="_blank" rel="noopener noreferrer">${esc(it.text)}</a>` : `<span>${esc(it.text)}</span>`}
             <div class="p-muted small">${it.kind === 'news' ? `${fmt(it.time)} ET · ${ago(it.time)}` : 'now'}
-              · <a href="#" data-exchange="${esc(it.exchange)}" title="Show on the globe">${esc(it.exchange)}</a>
+              · ${window.Views?.on('markets') === false ? `<span>${esc(it.exchange)}</span>`
+                : `<a href="#" data-exchange="${esc(it.exchange)}" title="Show on the globe">${esc(it.exchange)}</a>`}
               ${(it.tickers || []).map((t) => watched.has(t)
                 ? ` <a href="#" class="tk" data-ticker="${esc(t)}" title="Open the chart">${esc(t)}</a>` : ` <span class="tk">${esc(t)}</span>`).join('')}</div>
           </div>
@@ -69,7 +70,12 @@
     const t = e.target.closest('[data-ticker]');
     if (t) { e.preventDefault(); window.dispatchEvent(new CustomEvent('liminal:open-symbol', { detail: t.dataset.ticker })); return; }
     const x = e.target.closest('[data-exchange]');
-    if (x) { e.preventDefault(); showPane('markets', { toggle: false }); window.dispatchEvent(new CustomEvent('liminal:feature-exchange', { detail: x.dataset.exchange })); }
+    if (x) {
+      e.preventDefault();
+      if (window.Views?.on('markets') === false) return;  // turned off since this list was drawn: no globe to show it on
+      showPane('markets', { toggle: false });
+      window.dispatchEvent(new CustomEvent('liminal:feature-exchange', { detail: x.dataset.exchange }));
+    }
   });
   window.addEventListener('liminal:view', (e) => { if (e.detail.view === 'news') load(); });
   setInterval(() => { if (document.body.dataset.view === 'news') load(); }, 60000);

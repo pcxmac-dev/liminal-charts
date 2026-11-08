@@ -14,7 +14,9 @@
                        setting); with none picked, this computer's own (app.js LOCAL_ZONE)
      Chart type        candles, bars, lines ... or a price-based type (Renko, Kagi ...): app.js typeSelect,
                        hidden, does the rest; a price-based type's settings stay in the toolbar
-     Theme             the page's and the chart's colours (here only: the toolbar's picker is gone)
+     Theme             the page's and the chart's colours (here only: the toolbar's picker is gone): the UI's theme,
+                       one for every app's page on this machine (app.js pickTheme saves it; the platform's
+                       Preferences plugin sets the same one)
      GPU               the chart drawn by the graphics card (WebGL2), or by the CPU (app.js gpuBtn, hidden)
      Candles           the rising and falling candles' colours (app.js setCandleColors: TradingView's
                        #089981 and #f23645 unless picked), from the same colour popup
@@ -23,10 +25,12 @@
                        colour by the system's picker or its hex code, or back to the standard one), and
                        how strongly it is laid on, 0-200 % of its standard strength (100 %: the strength
                        set 2026-10-28, half the blue and violet before)
+     Views             the rail's views, each with a switch (the library's): a view turned off by a right click
+                       on its icon is turned on again here (panels.js Views); Stock and Preferences stay on
 
-   Kept per profile, as the rest of the page's settings are (app.js prefs). */
+   Kept per profile, as the rest of the page's settings are (app.js prefs), but the theme: the machine's. */
 (() => {
-  const { esc } = window.LiminalIcons;
+  const { esc, icon } = window.LiminalIcons;
   const SHADES = [
     ['pre', 'Pre-market', '04:00-09:30, blue'],
     ['post', 'After-hours', '16:00-20:00, grey'],
@@ -96,7 +100,7 @@
         <select id="prefType">${[...$('typeSelect').children].map((g) => g.tagName === 'OPTGROUP'
           ? `<optgroup label="${esc(g.label)}">${[...g.children].map(typeOption).join('')}</optgroup>` : typeOption(g)).join('')}
         </select></label>
-      <label class="pref-row pref-session" title="The page's and the chart's colours"><span>Theme</span>
+      <label class="pref-row pref-session" title="The page's and the chart's colours: the UI's theme, the same on every app's page on this machine (the platform's Preferences picks it too)"><span>Theme</span>
         <select id="prefTheme">${Object.entries(THEMES).map(([t, th]) =>
           `<option value="${esc(t)}"${t === state.theme ? ' selected' : ''}>${esc(th.label)} (${th.base === 'light' ? 'light' : 'dark'})</option>`).join('')}
         </select></label>
@@ -104,6 +108,12 @@
         <span><input type="checkbox" id="prefGpu"${gpu.on && gpu.supported ? ' checked' : ''}${gpu.supported ? '' : ' disabled'}> on the GPU</span></label>
       <div class="pref-row pref-candles"><span class="pref-candles-head">Candles</span>
         ${CANDLES.map(([k, name, what]) => `<span>${swatchHtml(k, what)}${esc(name)}</span>`).join('')}</div>
+      <div class="p-sub">Views <span class="p-muted small">on the rail: a right click on an icon disables its view, its switch here enables it again</span></div>
+      ${(window.Views?.list() || []).map((v) => `
+        <div class="pref-row pref-view"${v.fixed ? ` title="${esc(v.name === 'prefs' ? 'Where the views are enabled again: always on the rail' : "The app's own icon (the symbol's): always on the rail")}"` : ''}>
+          <span class="pref-view-name">${icon(v.icon, 18)}${esc(v.title)}</span>
+          <label class="switch-row"><button type="button" class="switch" role="switch" aria-checked="${v.on}" aria-label="${esc(v.title)}"
+            data-view="${esc(v.name)}"${v.fixed ? ' disabled' : ''}></button><span>${v.on ? 'Enabled' : 'Disabled'}</span></label></div>`).join('')}
       <div class="p-sub">Session shading <span class="p-muted small">on intraday stock charts: its colour, and its strength (100 % standard)</span></div>
       ${SHADES.map(([k, name, what]) => `
         <div class="pref-row pref-shade" title="${esc(`${name}: ${what}`)}">
@@ -222,7 +232,21 @@
     $('sessionSelect').value = e.target.value;  // the hidden picker does the rest (app.js), as the axis's switch
     $('sessionSelect').dispatchEvent(new Event('change'));
   });
+  // a view's switch: its icon back on the rail, or out of it (panels.js Views; the switch follows, liminal:views)
+  function syncViews() {
+    for (const v of window.Views?.list() || []) {
+      const sw = $('pPrefs').querySelector(`button.switch[data-view="${CSS.escape(v.name)}"]`);
+      if (!sw) continue;
+      sw.setAttribute('aria-checked', String(v.on));
+      sw.nextElementSibling.textContent = v.on ? 'Enabled' : 'Disabled';
+    }
+  }
   $('pPrefs').addEventListener('click', (e) => {
+    const sw = e.target.closest('button.switch[data-view]');
+    if (sw) {
+      if (!sw.disabled) window.Views?.set(sw.dataset.view, sw.getAttribute('aria-checked') !== 'true');
+      return;
+    }
     const swatch = e.target.closest('.pref-swatch[data-color]');
     if (swatch) {
       if (pop?.dataset.color === swatch.dataset.color) closePop(true);
@@ -252,7 +276,8 @@
   window.addEventListener('liminal:indicators', again);  // picked here, or a layout's
   window.addEventListener('liminal:charttype', again);  // a type picked, or set by a model or a layout  // the symbol's feeds listed again (app.js renderFeeds)
   window.addEventListener('liminal:timezone', again);  // picked under the price axis
-  window.addEventListener('liminal:theme', () => { again(); window.TimeAxis?.redraw(); });  // picked in the toolbar; the shades' theme
+  window.addEventListener('liminal:theme', () => { again(); window.TimeAxis?.redraw(); });  // picked here, or the UI's changed; the shades' theme
+  window.addEventListener('liminal:views', () => { if (shown()) syncViews(); });  // a right click on the rail, or a switch here
   window.addEventListener('liminal:view', (e) => { if (e.detail?.pane === 'prefs') render(); else closePop(); });
   window.Prefs = { render, get shade() { return { ...state.shade }; }, get colors() { return { ...state.shadeColor }; } };
   if (shown()) render();  // the page opened on this pane (its pick kept): shown before this script listened

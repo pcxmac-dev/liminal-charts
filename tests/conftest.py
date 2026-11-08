@@ -88,6 +88,15 @@ def no_agency_requests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def ui_preferences_apart(monkeypatch, tmp_path):
+    """Tests never read or write the machine's UI preferences (the data folder's ui.json, which every app's page
+    follows: the user's theme): each test has its own file (LIMINAL_UI_FILE), none until it saves one."""
+    from liminal_libs import ui
+
+    monkeypatch.setenv(ui.UI_VAR, str(tmp_path / "ui.json"))
+
+
+@pytest.fixture(autouse=True)
 def no_cached_movers():
     """The big movers are cached per process for a few minutes (collector.big_movers): each test
     starts without another test's."""

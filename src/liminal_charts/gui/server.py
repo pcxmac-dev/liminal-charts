@@ -2133,6 +2133,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                 body = json.loads(self.rfile.read(length) or b"{}") if method != "DELETE" else {}
                 if not isinstance(body, dict):
                     raise ValueError("body must be a JSON object")
+                if urlparse(self.path).path == web.UI_PATH and method == "POST":  # the machine's, not a profile's (web.py)
+                    return self._json(web.save_ui(body))
                 parts = urlparse(self.path).path.rstrip("/").split("/")
                 me = self._profile() or FIRST_PROFILE  # without a cookie (the command line, tests): the first
                 page = self.headers.get(PROFILE_HEADER)
@@ -2298,6 +2300,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                 return
             q = {k: v[-1] for k, v in parse_qs(url.query).items()}
             try:
+                if url.path == web.UI_PATH:  # the UI's preferences: the page painted in the theme (alone, the integrator's own page)
+                    return self._json(web.ui_preferences())
                 signed = self._profile()
                 me = signed or FIRST_PROFILE  # without a cookie (the command line, tests): the first
                 if url.path == "/api/profiles":

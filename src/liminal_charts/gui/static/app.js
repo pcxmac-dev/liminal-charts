@@ -39,6 +39,7 @@ const prefs = {
     catch { return fallback; }
   },
   set(key, value) { try { localStorage.setItem(PREFS_PREFIX + key, JSON.stringify(value)); } catch { /* ignore */ } },
+  drop(key) { try { localStorage.removeItem(PREFS_PREFIX + key); } catch { /* ignore */ } },
 };
 
 const state = {
@@ -47,7 +48,9 @@ const state = {
   period: prefs.get('period', { type: 'minute', span: 1 }),
   session: prefs.get('session', 'regular'),
   unfiltered: prefs.get('unfiltered', false) === true,  // all data, bad data included (the "All data" switch)
-  theme: prefs.get('theme', 'dark'),
+  // the UI's theme, as theme.js painted the page (the one this browser saw last); else the profile's own from
+  // before the UI's preferences; the saved one follows (takeUiTheme)
+  theme: document.body.dataset.theme || prefs.get('theme', 'dark'),
   indicators: prefs.get('indicators', ['VOL']),
   chartType: prefs.get('chartType', 'candles'),
   adjust: prefs.get('adjust', 'none'),
@@ -427,11 +430,66 @@ const themeBase = () => THEMES[state.theme].base;
 
 function setTheme(name) {
   state.theme = THEMES[name] ? name : 'dark';
-  document.body.dataset.theme = state.theme;
-  document.body.classList.toggle('light', themeBase() === 'light');
+  if (window.LiminalTheme) window.LiminalTheme.apply(state.theme);  // the page, and remembered for the next visit
+  else { document.body.dataset.theme = state.theme; document.body.classList.toggle('light', themeBase() === 'light'); }
   $('themeSelect').value = state.theme;
 }
 setTheme(state.theme);
+
+// The theme is the UI's (the user, 2026-11-07: "add a preferences plugin for the 'UI' and add the different themes"):
+// one for every app's page on this machine (liminal-libs ui: the data folder's ui.json, GET and POST /api/ui), which
+// the platform's Preferences plugin sets too. theme.js (first in <body>) painted the page in the one this browser saw
+// last and asked for the saved one; the page asks again whenever it comes back into view, so a theme picked on
+// another app's page follows here; a theme picked in Preferences (pickTheme) is saved there for them. A profile's own
+// theme from before (its 'theme' preference) is carried over once, while the file holds none (not from the fetcher's
+// own page: nobody's).
+function takeUiTheme(ui) {
+  if (!ui || !THEMES[ui.theme]) { setTheme(state.theme); return; }  // no answer, or a theme this page has no chart for
+  const mine = FETCHER_MODE ? null : prefs.get('theme', null);
+  if (mine !== null) {
+    if (ui.saved === false && THEMES[mine] && mine !== ui.theme) {
+      pickTheme(mine).then((saved) => { if (saved) prefs.drop('theme'); });
+      return;
+    }
+    prefs.drop('theme');
+  }
+  if (ui.theme === state.theme) return;
+  setTheme(ui.theme);
+  applyChartType();
+  window.dispatchEvent(new CustomEvent('liminal:theme', { detail: state.theme }));
+}
+
+let themePicks = 0;  // a theme picked here: an answer asked for before it is out of date
+function hearUiTheme(asked) {
+  const picks = themePicks;
+  return Promise.resolve(asked).catch(() => null).then((ui) => {
+    if (picks === themePicks) takeUiTheme(ui);
+    else setTheme(state.theme);  // picked meanwhile (theme.js painted the page in the older answer): the pick stays
+  });
+}
+
+async function pickTheme(name) {  // shown at once, then saved for every app's page; true once saved
+  themePicks += 1;
+  setTheme(name);
+  applyChartType();
+  window.dispatchEvent(new CustomEvent('liminal:theme', { detail: state.theme }));
+  try {
+    await apiWrite('POST', '/api/ui', { theme: state.theme });
+    return true;
+  } catch (err) {
+    showError(new Error(`The ${THEMES[state.theme].label} theme is shown here but not saved for the other apps' pages: ${err.message || err}`));
+    return false;
+  }
+}
+
+let askingUi = null;
+function followUiTheme() {  // the page back in view: the saved theme asked for again
+  if (askingUi || !window.LiminalTheme || document.hidden) return;
+  askingUi = hearUiTheme(window.LiminalTheme.load()).finally(() => { askingUi = null; });
+}
+if (window.LiminalTheme) hearUiTheme(window.LiminalTheme.ready);
+document.addEventListener('visibilitychange', followUiTheme);
+window.addEventListener('focus', followUiTheme);
 
 // -- chart ---------------------------------------------------------------------
 // Bars may shrink far below a pixel each, so any interval can be zoomed out to months or years
@@ -3538,13 +3596,8 @@ async function ensureLayout() {
 
 // -- top bar actions and keys ----------------------------------------------------
 // Zoom and the latest bar are keys (+, -, End) and the mouse, no buttons; the theme and the GPU switch
-// are picked in Preferences (prefs.js), through these hidden controls.
-$('themeSelect').addEventListener('change', (e) => {
-  setTheme(e.target.value);
-  prefs.set('theme', state.theme);
-  applyChartType();
-  window.dispatchEvent(new CustomEvent('liminal:theme', { detail: state.theme }));
-});
+// are picked in Preferences (prefs.js), through these hidden controls (the theme saved for every app's page: pickTheme).
+$('themeSelect').addEventListener('change', (e) => pickTheme(e.target.value));
 
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -3553,6 +3606,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.target.matches('input, select, textarea') || document.querySelector('dialog[open]')) return;
+  // a context menu open (a rail icon's, the library's menu.js) has the keys; the Escape that closed it is its own
+  if (window.LiminalMenu?.shown || (e.key === 'Escape' && e.defaultPrevented)) return;
   if (e.key === 'Escape') { cancelDrawing(); setActiveTool('cursor'); }
   else if (e.key === 'h' && e.altKey) { e.preventDefault(); startDrawing('measure'); }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedOverlay && document.body.dataset.view === 'chart') {

@@ -22,7 +22,9 @@
      Resources the app's processes (CPU, memory, disk, connections), the machine's bandwidth, the
                disks and the data files (resources.js)
 
-   Clicking Stock or Analysis again while it is showing hides or shows its side panel.
+   Clicking Stock or Analysis again while it is showing hides or shows its side panel. A right click on a view's
+   icon offers to disable it (the library's menu.js): its icon leaves the rail until its switch in Preferences
+   enables it again (prefs.js), kept per profile.
    Also: the cursor statistics box in the price window's upper right (on-screen max/min and the bar under the
    cursor). */
 (() => {
@@ -33,12 +35,52 @@
                   exchanges: 'exchanges', plugins: 'plugins' };
   const BESIDE = new Set(['watchlist', 'prefs']);
 
+  // -- the views turned off ------------------------------------------------------------------
+  // The user, 2026-11-07, of the platform's tray: "allow me to right click on the icons to disable them on the right
+  // icon menu, also allow for enable disable switch (left to right)": here a right click on a view's rail icon offers
+  // Disable, and the icon stays out of the rail (the view with it: nothing opens it) until its switch in Preferences
+  // enables it again. Kept per profile. Stock (the app's own icon, the symbol's, at the top) and Preferences (where the
+  // switches are) cannot be turned off; the fetcher's own page (nobody's, no Preferences) shows every view it has.
+  const RAIL_VIEWS = [  // as on the rail: the view, its name, its icon (icons.js; Stock's is the symbol's own)
+    ['stock', 'Stock', 'analysis'], ['analysis', 'Analysis', 'integral'], ['trading', 'Trading', 'trading'],
+    ['watchlist', 'Watchlist', 'watchlist'], ['prefs', 'Preferences', 'sliders'], ['exchanges', 'Exchanges', 'scales'],
+    ['markets', 'Markets', 'globe'], ['news', 'News', 'thermometer'], ['gov', 'Federal', 'statehouse'],
+    ['datasets', 'Datasets', 'scroll'], ['fetcher', 'Fetcher', 'disk'], ['live', 'Live', 'record'],
+    ['plugins', 'Plugins', 'plug'], ['resources', 'Resources', 'chip']];
+  const FIXED = new Set(['stock', 'prefs']);
+  const viewsOff = new Set(window.FETCHER_MODE ? [] : [].concat(prefs.get('viewsOff', []) || [])
+    .filter((v) => typeof v === 'string' && v in VIEWS && !FIXED.has(v)));
+  const viewOn = (name) => !viewsOff.has(name);
+
+  function drawViewsOff() {  // the icons of the views turned off out of the rail; a divider left with no icon after it too
+    if (window.FETCHER_MODE) return;
+    const rail = document.getElementById('rail');
+    for (const b of rail.querySelectorAll('button[data-pane]')) if (b.dataset.pane in VIEWS) b.hidden = viewsOff.has(b.dataset.pane);
+    for (const hr of rail.querySelectorAll(':scope > hr')) {
+      let next = hr.nextElementSibling;
+      while (next && next.tagName !== 'HR' && next.hidden) next = next.nextElementSibling;
+      hr.hidden = !next || next.tagName === 'HR';
+    }
+  }
+
+  function setViewOn(name, on) {
+    if (window.FETCHER_MODE || FIXED.has(name) || !(name in VIEWS) || viewOn(name) === on) return;
+    if (on) viewsOff.delete(name); else viewsOff.add(name);
+    prefs.set('viewsOff', [...viewsOff]);
+    drawViewsOff();
+    if (name === 'live') window.LiveIcon?.update((window.Activity?.data?.liveFeeds?.liveTickers || []).length > 0);  // its trace: only on the rail
+    if (!on && document.body.dataset.pane === name) showPane('stock', { toggle: false });  // the view showing went: the chart
+    window.dispatchEvent(new CustomEvent('liminal:views', { detail: { off: [...viewsOff] } }));
+  }
+  window.Views = { list: () => RAIL_VIEWS.map(([name, title, ic]) => ({ name, title, icon: ic, on: viewOn(name), fixed: FIXED.has(name) })),
+                   on: viewOn, set: setViewOn };
+
   // -- rail --------------------------------------------------------------------------------
   function showPane(name, { toggle = true } = {}) {
     // a bound app's page (bound-login: the login app's), whole, in the bound view
     const app = name.startsWith('bound-') && BOUND.has(name.slice(6)) ? name.slice(6) : null;
-    // the fetcher's own page has no chart views (window.FETCHER_MODE, app.js): the Fetcher instead
-    if (!app && (!(name in VIEWS) || (window.FETCHER_MODE && VIEWS[name] === 'chart'))) name = window.FETCHER_MODE ? 'fetcher' : 'stock';
+    // the fetcher's own page has no chart views (window.FETCHER_MODE, app.js): the Fetcher instead; a view turned off: the chart
+    if (!app && (!(name in VIEWS) || !viewOn(name) || (window.FETCHER_MODE && VIEWS[name] === 'chart'))) name = window.FETCHER_MODE ? 'fetcher' : 'stock';
     const view = app ? 'bound' : VIEWS[name];
     if (app) showBound(app);
     const same = document.body.dataset.pane === name && document.body.dataset.view === view;
@@ -125,6 +167,17 @@
     const b = e.target.closest('button[data-pane]');
     if (b) showPane(b.dataset.pane);
   });
+  // a right click on a view's icon: Disable (Stock's, Preferences', the profile's and a bound app's keep the browser's menu)
+  document.getElementById('rail').addEventListener('contextmenu', (e) => {
+    const b = e.target.closest('button[data-pane]');
+    const view = b && RAIL_VIEWS.find(([name]) => name === b.dataset.pane);
+    if (!view || window.FETCHER_MODE || FIXED.has(view[0]) || !window.LiminalMenu) return;
+    e.preventDefault();
+    const r = b.getBoundingClientRect();
+    const keyboard = e.clientX === 0 && e.clientY === 0;  // the menu key, or Shift+F10: beside the icon
+    window.LiminalMenu.open({ x: keyboard ? r.left - 170 : e.clientX, y: keyboard ? r.top : e.clientY, title: view[1],
+      items: [{ label: 'Disable', run: () => setViewOn(view[0], false) }], from: b });
+  });
   // The apps bound to this front (the login app), each its own tray at the foot of the rail after a
   // divider (the user, 2026-11-04: "Each divider represents a separate tray. From a separate object
   // like the login"); an icon opens the app's page, whole, in the bound view (?embedded=1 hides its
@@ -132,8 +185,12 @@
   const BOUND = new Set();
   function showBound(app) {
     const f = document.getElementById('boundFrame');
-    if (f.dataset.app !== app) { f.src = `/${encodeURIComponent(app)}/?embedded=1`; f.dataset.app = app; }
+    // in this page's theme (the UI's: theme.js; the bound app's page honours a `theme` in its address)
+    if (f.dataset.app !== app) { f.src = `/${encodeURIComponent(app)}/?embedded=1&theme=${encodeURIComponent(state.theme)}`; f.dataset.app = app; }
   }
+  window.addEventListener('liminal:theme', () => {  // the bound page shown since: painted again in place (same origin)
+    try { document.getElementById('boundFrame').contentWindow?.LiminalTheme?.apply(state.theme); } catch (e) { /* not loaded */ }
+  });
   async function drawBoundTrays() {
     let trays = [];
     try { const r = await fetch('/api/trays'); if (r.ok) trays = (await r.json()).trays || []; } catch (e) { trays = []; }
@@ -219,8 +276,8 @@
   window.addEventListener('liminal:symbol-updated', (e) => {
     if (e.detail === state.ticker) chart.resetData();  // filled gaps are anywhere, not only after the newest bar
   });
-  window.addEventListener('keydown', (e) => {  // Escape returns to the chart from the other views
-    if (e.key === 'Escape' && document.body.dataset.view !== 'chart' && !document.querySelector('dialog[open]')) showPane('stock', { toggle: false });
+  window.addEventListener('keydown', (e) => {  // Escape returns to the chart from the other views (not one that closed a menu: menu.js's)
+    if (e.key === 'Escape' && !e.defaultPrevented && document.body.dataset.view !== 'chart' && !document.querySelector('dialog[open]')) showPane('stock', { toggle: false });
   });
 
   // -- cursor statistics ---------------------------------------------------------------
@@ -344,6 +401,7 @@
 
   // -- start --------------------------------------------------------------------------
   renderRailIcons(null);
+  drawViewsOff();
   // The view a link names (/#markets: signing in opens the globe, login.js), else the one you were on.
   const linked = location.hash.slice(1);
   if (linked) history.replaceState(null, '', location.pathname + location.search);

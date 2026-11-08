@@ -351,6 +351,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .5); }
 #rail button.active::before { content: ""; position: absolute; left: -4px; top: 10px; bottom: 10px; width: 2px;
   border-radius: 1px; background: var(--accent); }
 #rail hr { width: 70%; border: 0; border-top: 1px solid var(--border); margin: 4px auto; }
+#rail > [hidden] { display: none; }  /* a view turned off (panels.js), and a divider left with nothing after it */
 /* The signed-in profile at the rail's foot (its initial, in a circle); a click goes to the login page. */
 #rail .rail-profile { font-weight: 600; font-size: 15px; color: var(--text); }
 #rail .rail-profile::after { content: ""; position: absolute; inset: 9px; border: 1.5px solid var(--muted); border-radius: 50%; }
@@ -888,6 +889,31 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
 .pref-reset { margin-top: 6px; border: 1px solid var(--border); border-radius: 4px; background: none; color: var(--text);
   padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer; }
 .pref-reset:hover { border-color: var(--accent); }
+/* the rail's views, each with its switch */
+.pref-view { margin: 4px 0; }
+.pref-view-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.pref-view-name svg { flex: none; color: var(--muted); }
+
+/* The library's switch and context menu (liminal.css 1.23.0, as they are there), until this page moves onto that
+   file (0.3.0): the switch at each view in Preferences, the menu at a rail icon's right click (menu.js). The menu's
+   rules are a menu.js box's alone (its role): this page's own .menu is a dropdown's wrapper. */
+.switch { position: relative; width: 36px; height: 20px; padding: 0; flex: none; vertical-align: middle;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel); cursor: pointer; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--muted); transition: transform .15s ease, background-color .15s ease; }
+.switch:hover { background: var(--hover); }
+.switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(16px); background: #fff; }
+.switch[aria-checked="true"]:hover { background: var(--accent); filter: brightness(1.12); }
+.switch:disabled { opacity: .5; cursor: default; }
+.switch-row { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+.menu[role="menu"] { position: fixed; z-index: 60; min-width: 150px; max-width: 280px; padding: 4px; box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+.menu-title { padding: 4px 10px 6px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu[role="menu"] button { display: block; width: 100%; text-align: left; padding: 6px 10px; border: 0; border-radius: 5px; }
+.menu[role="menu"] button:hover, .menu[role="menu"] button:focus-visible { background: var(--hover); outline: none; }
+.menu[role="menu"] button.danger { color: var(--down); }
 /* Watchlist (side panel) */
 #pWatch .w-head { display: flex; align-items: center; gap: 6px; }
 #pWatch .w-head select { margin-left: auto; max-width: 60%; }

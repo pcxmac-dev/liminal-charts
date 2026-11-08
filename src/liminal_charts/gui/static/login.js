@@ -61,7 +61,14 @@
     $('picker').hidden = true;
     $('loginApp').hidden = false;
     const f = $('loginFrame');
-    if (!f.dataset.loaded) { f.src = '/login/?embedded=1'; f.dataset.loaded = '1'; }
+    if (!f.dataset.loaded) {
+      f.dataset.loaded = '1';
+      // in this page's theme (the UI's, theme.js; the login app's page honours a `theme` in its address)
+      Promise.resolve(window.LiminalTheme?.ready).catch(() => null).then(() => {
+        const theme = document.body.dataset.theme;
+        f.src = `/login/?embedded=1${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`;
+      });
+    }
     $('loginNote').textContent = st && st.users === 0
       ? 'No account yet: sign up with your email, and the app opens as you.'
       : 'Sign in, or sign up with your email; the app opens as you.';

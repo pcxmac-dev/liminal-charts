@@ -231,6 +231,10 @@ def make_front_handler(front: Front):
                 if self._from_this_app():
                     self._json({"trays": front.trays()})
                 return
+            if path == web.UI_PATH:
+                if self._from_this_app():
+                    self._ui("GET")
+                return
             if path.startswith("/api/"):
                 if self._from_this_app():
                     self._proxy("GET")
@@ -247,6 +251,8 @@ def make_front_handler(front: Front):
                 return
             if self.headers.get(WRITE_HEADER) != "1":
                 return self._send(HTTPStatus.FORBIDDEN, b"missing request header", "text/plain")
+            if urlsplit(self.path).path == web.UI_PATH:
+                return self._ui(method)
             bound = self._bound_of(urlsplit(self.path).path)
             if bound is not None:
                 return self._bound(method, bound)
@@ -260,6 +266,24 @@ def make_front_handler(front: Front):
 
         def do_DELETE(self) -> None:
             self._write("DELETE")
+
+        def _ui(self, method: str) -> None:
+            """The UI's preferences (GET; POST {"theme": name}), answered here rather than by the integrator: they
+            are this machine's file (one for every app's page), and the sign-in page asks for them before any
+            integrator need run (web.ui_preferences, web.save_ui)."""
+            raw = self.headers.get("Content-Length") or "0"
+            if method not in ("GET", "POST") or not raw.isdecimal() or int(raw) > web.MAX_BODY:
+                self._drain()
+                return self._json({"error": "the UI's preferences are read with GET and set with POST {\"theme\": name}"},
+                                  HTTPStatus.BAD_REQUEST if method in ("GET", "POST") else HTTPStatus.METHOD_NOT_ALLOWED)
+            try:
+                if method == "GET":
+                    return self._json(web.ui_preferences())
+                return self._json(web.save_ui(json.loads(self.rfile.read(int(raw)) or b"{}")))
+            except ValueError as e:  # not JSON, not a theme
+                return self._json({"error": f"bad request: {e}"}, HTTPStatus.BAD_REQUEST)
+            except Exception as e:  # noqa: BLE001 - answered, not dropped: the file unwritable, unreadable
+                return self._json({"error": f"the UI's preferences: {type(e).__name__}: {e}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
         def _drain(self) -> None:
             """A request's body read and dropped before an answer that does not use it (a connection

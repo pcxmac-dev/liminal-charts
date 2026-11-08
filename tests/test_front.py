@@ -165,7 +165,8 @@ def test_the_front_binds_the_login_app_under_its_prefix_and_draws_its_tray(tmp_p
         assert b'id="rail"' in _get(port, "/", {"Cookie": "mc_profile=1; liminal_login_charts=tok"})[1]
         assert b'id="loginApp"' in _get(port, "/", {"Cookie": "liminal_login_charts=tok"})[1]
         login_js = (front_mod.web.STATIC / "login.js").read_text(encoding="utf-8")
-        assert "fetch('/login/api/status')" in login_js and "'/login/?embedded=1'" in login_js and "e.data.liminal !== 'login'" in login_js
+        # the login app's page held there in this page's theme (test_ui_preferences.py)
+        assert "fetch('/login/api/status')" in login_js and "`/login/?embedded=1${theme ?" in login_js and "e.data.liminal !== 'login'" in login_js
         assert "post('/api/profiles', { name })" in login_js  # the profile under the account name
         assert "/login/api/sign-out" in (front_mod.web.STATIC / "panels.js").read_text(encoding="utf-8")
         assert r.getheader("Set-Cookie") == "mc_profile=7; Path=/"  # the bound app's cookie, its own path (the main page sends it)
