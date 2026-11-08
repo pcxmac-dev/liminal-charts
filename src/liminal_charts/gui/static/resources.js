@@ -138,7 +138,7 @@
           while this view is open, every ${data.cadence.background} s otherwise. This monitor: ${core(mon.cpu)} of a core
           (its limit ${core(mon.limit)}) and ${bytes(mon.memory)} of samples (at most ${bytes(mon.memoryCap)}).</div>
         ${mon.error ? `<div class="down small">Last sample failed: ${esc(mon.error)}</div>` : ''}
-        ${data.windows ? '' : '<div class="p-muted small">Process details, the machine and its bandwidth are read from Windows: here, this process, the disks and the files only.</div>'}</div>
+        ${data.windows || data.system === 'linux' ? '' : '<div class="p-muted small">Process details, the machine and its bandwidth are read from Windows or Linux: here, this process, the disks and the files only.</div>'}</div>
         <div class="view-actions filters">${[['recent', 'Last 10 min'], ['day', 'Last day']].map(([k, l]) => `<button data-span="${k}" class="${k === span ? 'active' : ''}">${l}</button>`).join('')}</div></div>
       <div class="tiles res-tiles">${tiles}</div>
       <h3 class="res-h">Processes</h3>
