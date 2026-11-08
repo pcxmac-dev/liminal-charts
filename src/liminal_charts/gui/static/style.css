@@ -1088,6 +1088,16 @@ main > .view.ex-view:not([hidden]) { display: grid; }
 .pl-usage i { display: block; height: 100%; background: var(--accent); }
 .pl-view code { font-size: 11px; }
 .pl-choose { font-size: 12px; padding: 1px 4px; max-width: 100%; }
+/* Databases view (databases.js): the integrator's databases, what there is | the one picked | its specifics */
+.db-view .ex-list h4 { margin: 16px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.db-view .ex-group span { text-transform: none; letter-spacing: 0; }
+.db-view .tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.db-view .tile .big { font-size: 18px; overflow-wrap: anywhere; }
+.db-view .warn { color: var(--warn, #d9a441); }
+.db-view code { font-size: 11px; overflow-wrap: anywhere; }
+.db-note { margin: 10px 0; }
+.db-spec th { text-align: left; font-weight: 500; color: var(--muted); white-space: nowrap; vertical-align: top; padding: 4px 8px 4px 0; }
+.db-spec td { overflow-wrap: anywhere; }
 /* Setup: each variable a plugin reads, typed and saved here (never shown back) */
 .pl-setup td { vertical-align: middle; }
 .pl-setup input.pl-key { width: 100%; min-width: 140px; font-size: 12px; padding: 2px 6px; box-sizing: border-box; }

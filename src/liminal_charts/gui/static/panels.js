@@ -19,6 +19,8 @@
      Plugins   every data provider plugin (a feed or source): its plan and where that came from, its
                limits and capabilities, its last capability scan with a Rescan, its part in the
                delivery scheme (plugins.js)
+     Databases every database the integrator keeps (SQLite, DuckDB, MongoDB): its size on disk, growth an
+               hour, last write, its tables' rows; the one picked, its specifics beside it (databases.js)
      Resources the app's processes (CPU, memory, disk, connections), the machine's bandwidth, the
                disks and the data files (resources.js)
 
@@ -32,7 +34,7 @@
   // The watchlist and the preferences sit beside whichever chart was showing (no chart content of their own).
   const VIEWS = { stock: 'chart', analysis: 'chart', trading: 'chart', watchlist: 'chart', prefs: 'chart', markets: 'markets',
                   news: 'news', gov: 'gov', datasets: 'datasets', fetcher: 'fetcher', live: 'live', resources: 'resources',
-                  exchanges: 'exchanges', plugins: 'plugins' };
+                  exchanges: 'exchanges', plugins: 'plugins', databases: 'databases' };
   const BESIDE = new Set(['watchlist', 'prefs']);
 
   // -- the views turned off ------------------------------------------------------------------
@@ -46,7 +48,7 @@
     ['watchlist', 'Watchlist', 'watchlist'], ['prefs', 'Preferences', 'sliders'], ['exchanges', 'Exchanges', 'scales'],
     ['markets', 'Markets', 'globe'], ['news', 'News', 'thermometer'], ['gov', 'Federal', 'statehouse'],
     ['datasets', 'Datasets', 'scroll'], ['fetcher', 'Fetcher', 'disk'], ['live', 'Live', 'record'],
-    ['plugins', 'Plugins', 'plug'], ['resources', 'Resources', 'chip']];
+    ['plugins', 'Plugins', 'plug'], ['databases', 'Databases', 'database'], ['resources', 'Resources', 'chip']];
   const FIXED = new Set(['stock', 'prefs']);
   const viewsOff = new Set(window.FETCHER_MODE ? [] : [].concat(prefs.get('viewsOff', []) || [])
     .filter((v) => typeof v === 'string' && v in VIEWS && !FIXED.has(v)));
@@ -136,6 +138,7 @@
     $('railResources').innerHTML = icon('chip', RAIL_ICON);
     $('railExchanges').innerHTML = icon('scales', RAIL_ICON);
     $('railPlugins').innerHTML = icon('plug', RAIL_ICON);
+    $('railDatabases').innerHTML = icon('database', RAIL_ICON);
     $('railPrefs').innerHTML = icon('sliders', RAIL_ICON);
     const running = !!activity?.running;
     const fresh = activity?.newData || 0;

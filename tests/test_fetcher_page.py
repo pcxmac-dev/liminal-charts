@@ -93,7 +93,7 @@ def test_the_fetchers_page_is_the_chart_page_without_the_chart_and_what_is_the_u
         assert part in hidden, part
     for kept in ('data-pane="exchanges"', 'data-pane="markets"', 'data-pane="news"', 'data-pane="gov"',
                  'data-pane="datasets"', 'data-pane="fetcher"', 'data-pane="live"', 'data-pane="plugins"',
-                 'data-pane="resources"'):
+                 'data-pane="databases"', 'data-pane="resources"'):
         assert kept not in hidden and kept in page, kept
     app_js = (server.STATIC / "app.js").read_text(encoding="utf-8")
     assert "const FETCHER_MODE = document.body.dataset.mode === 'fetcher';" in app_js

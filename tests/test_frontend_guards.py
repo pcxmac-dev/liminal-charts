@@ -349,6 +349,27 @@ def test_the_resources_view_has_its_rail_button_icon_and_script():
     assert "document.hidden" in r and "clearTimeout(timer)" in r  # nothing asked while hidden or on another view
 
 
+def test_the_databases_view_has_its_rail_button_icon_script_and_three_columns():
+    # the user, 2026-11-07: "the integrator will have stats for the databases themselves"; laid out like every app's
+    # page: what there is | the one picked | its specifics, before the rail
+    html = _js("index.html")
+    assert 'id="railDatabases"' in html and 'id="viewDatabases" data-view="databases"' in html and 'src="databases.js"' in html
+    assert 'class="view ex-view db-view"' in html
+    rail = html.split('<nav id="rail"', 1)[1].split("</nav>", 1)[0]
+    assert rail.index('id="railPlugins"') < rail.index('id="railDatabases"') < rail.index('id="railResources"')
+    panels = _js("panels.js")
+    assert "databases: 'databases'" in panels and "$('railDatabases').innerHTML = icon('database', RAIL_ICON);" in panels
+    assert "['databases', 'Databases', 'database']" in panels  # Preferences' switch for it, its right click
+    assert "database:" in _js("icons.js")
+    d = _js("databases.js")
+    assert "api('/api/databases')" in d and "api('/api/databases/detail', { id })" in d and "ev.detail.view === 'databases'" in d
+    for part in ('class="ex-venues"', 'class="ex-list"', 'class="ex-side"'):
+        assert part in d, part
+    assert "document.hidden" in d and "clearTimeout(timer)" in d  # nothing asked while hidden or on another view
+    assert "el.scrollTop = keep[i]" in d  # drawn again every 10 s: the reader keeps their place
+    assert ".db-view" in _js("style.css")
+
+
 def test_views_restored_on_opening_the_page_load_their_content():
     # panels.js restores the last view before these scripts listen for its event: each loads itself too
     order = _js("index.html")

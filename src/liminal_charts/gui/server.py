@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 import pandas as pd
 
 from liminal_libs import config, freshness, live, mongo, sourcing
+from liminal_libs.apps import Refused
 from liminal_libs.config import Settings
 from liminal_libs.storage import LayoutLimit, Store
 from liminal_libs.storage.markets import mic_names
@@ -2403,6 +2404,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                     return self._json(app.dataset_series(q["name"]))
                 if url.path == "/api/dataset/values":
                     return self._json(app.dataset_values(q["name"], q["series"]))
+                if url.path.startswith("/api/"):  # a route of the app this API speaks for (the integrator's databases)
+                    return self._frame_get(url.path, q)
             except (KeyError, ValueError) as e:
                 return self._json({"error": f"bad request: {e}"}, HTTPStatus.BAD_REQUEST)
             except LookupError as e:
@@ -2414,6 +2417,16 @@ def make_handler(app: ChartApp, port_ref: list[int]):
             except Exception as e:  # noqa: BLE001 - answered, not dropped (_failed)
                 return self._failed(e)
             return self._static(url.path)
+
+        def _frame_get(self, path: str, q: dict) -> None:
+            """A GET none of this API's routes answers, asked of its frame (liminal_libs.apps.App.api): on the
+            integrator's page its own routes, GET /api/databases and /api/databases/detail (the user, 2026-11-07:
+            "the integrator will have stats for the databases themselves"); a route it refuses, its refusal."""
+            try:
+                status, data, *_ = app.frame.api(self, "GET", path, q, None)
+            except Refused as e:
+                return self._json({"error": e.reason}, e.status)
+            return self._json(data, status)
 
         def _static(self, path: str) -> None:
             rel = "index.html" if path in ("", "/") else path.lstrip("/")
