@@ -1321,10 +1321,15 @@ SCAN_DAYS = 7  # each provider's capabilities are scanned again this often, at t
 def _scan(name: str, source, store: Store, log, due_days: float | None = None, settings: Settings | None = None) -> None:
     """Run a provider's capability scan and keep it (sourcing.Scans.keep); with `due_days` (a sync's),
     only when the last is older and the feed has symbols to collect. A scan that fails is logged;
-    the run goes on."""
+    the run goes on. An AI assistant's Connect is one too (`source`: its Assistant): asked, kept and
+    logged alike; the rate window below is a feed's alone (an assistant's limiter keeps its plan's)."""
     from liminal_libs import sourcing
+    from liminal_libs.sources.registry import assistants
 
     p = providers().get(name)
+    feed = p is not None
+    if p is None:
+        p = assistants().get(name)
     if p is None or not p.has_scan:
         return
     last = sourcing.Scans.last(store, name)
@@ -1344,7 +1349,7 @@ def _scan(name: str, source, store: Store, log, due_days: float | None = None, s
     for what, ok, detail in found.results:
         log(f"{name}: {'yes' if ok else 'no '} {what}" + (f": {detail}" if detail else ""))
     client = getattr(source, "client", None)
-    if settings is not None and found.limits.get("perMinute") is not None and hasattr(client, "tighten"):
+    if feed and settings is not None and found.limits.get("perMinute") is not None and hasattr(client, "tighten"):
         from liminal_libs.ratelimit import describe
         from liminal_libs.sources.registry import rate_window
 

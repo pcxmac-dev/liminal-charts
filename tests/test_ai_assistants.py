@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from liminal_libs import sourcing
 from liminal_libs.assistants import AssistantPlugin, Caps, Model, Plan, ResponsesAssistant, Source
 from liminal_libs.config import load_settings
 from liminal_libs.ratelimit import fingerprint
@@ -199,3 +200,80 @@ def test_the_key_script_offers_the_assistants_with_the_account_in_the_open():
     src = SCRIPT.read_text(encoding="utf-8")
     assert "$listed.assistants" in src and "typed in the open" in src and 'Read-Host "$Name (typed hidden)" -AsSecureString' in src
     assert "Set-Key $k.name (-not $k.secret)" in src and "Write-Host $value" not in src
+
+
+# -- Connect (the capability scan) through the app: `capabilities NAME`, `ai connect`, the view's Rescan ----
+
+LIMITS = {"x-ratelimit-limit-requests": "5000", "x-ratelimit-limit-tokens": "1000000"}
+CONNECT_ENV = {"ACME_AI_API_KEY": KEY, "ACME_AI_ACCOUNT": EMAIL, "ACME_AI_PLAN": "build"}
+
+
+def _connect_session():
+    """What a Connect asks of the vendor: its models list, then one short answer; its limits in the headers."""
+    said = answer("OK", 12, 1)
+    said.headers = {**said.headers, **LIMITS}
+    return FakeSession(FakeResponse(200, {"data": [{"id": "acme-nano"}, {"id": "acme-pro"}]}, dict(LIMITS)), said)
+
+
+def test_an_assistants_connect_is_run_kept_logged_and_shown(installed, tmp_path, monkeypatch):
+    """cli._scan looked an assistant's name up among the feeds alone and returned at once: nothing asked,
+    nothing kept, nothing said (found 2026-11-09)."""
+    app, store, saved = _app(tmp_path, monkeypatch, **CONNECT_ENV)
+    try:
+        session, lines = _connect_session(), []
+        source = installed.build(app.settings, session=session)
+        cli._scan("acme-ai", source, store, lines.append, settings=app.settings)
+        assert [c[:2] for c in session.calls] == [("GET", "https://api.acme-ai.example/v1/models"),
+                                                  ("POST", "https://api.acme-ai.example/v1/responses")]
+        kept = store.kv_json(sourcing.SCAN_KEY.format("acme-ai"))
+        assert kept["results"][:2] == [["the key", True, "accepted: 2 models listed by the server"],
+                                       ["the model acme-nano", True, "listed"]]
+        assert kept["results"][2][:2] == ["an answer", True]
+        assert kept["results"][3] == ["its plan", True, "the server allows 5,000 requests a minute and 1,000,000 tokens a minute: "
+                                                        "the Build plan"]
+        assert kept["plan"] == {"ACME_AI_PLAN": "build"} and kept["alike"] == {}
+        assert kept["limits"] == {"seen": LIMITS, "perMinute": 5000, "kept": [5000, 60.0]}
+        assert lines[0] == "acme-ai: yes the key: accepted: 2 models listed by the server" and len(lines) == 5
+        assert lines[-1] == "acme-ai: plan found: ACME_AI_PLAN=build (used wherever you have not set ACME_AI_PLAN)"
+        # the window its limiter keeps is its plan's (Assistant.window): never a feed's (registry.rate_window knows feeds only)
+        assert not any("limiter" in line for line in lines) and source.client._limiter.max_calls == 5000
+        said = json.dumps(kept) + "".join(lines)
+        assert KEY not in said and EMAIL not in said
+        # the Plugins view shows it: when it was asked, each answer, the plan found
+        app._plugins_cache = None
+        e = next(p for p in app.plugins()["plugins"] if p["name"] == "acme-ai")
+        assert e["state"] == "ready" and e["scan"]["at"] == kept["at"] and not e["scan"]["running"]
+        assert e["scan"]["results"][0] == {"what": "the key", "available": True, "feed": "acme-ai",
+                                           "detail": "accepted: 2 models listed by the server"}
+        assert [r["what"] for r in e["scan"]["results"]] == ["the key", "the model acme-nano", "an answer", "its plan"]
+        assert e["plan"]["found"] == {"ACME_AI_PLAN": "build"} and e["plan"]["differs"] == []
+    finally:
+        store.close()
+
+
+def test_a_connect_that_fails_is_said_and_nothing_is_kept(installed, tmp_path, monkeypatch):
+    app, store, saved = _app(tmp_path, monkeypatch, **CONNECT_ENV)
+    try:
+        lines = []
+        monkeypatch.setattr(AcmeAI, "scan", lambda self, source: (_ for _ in ()).throw(ValueError("an answer it could not read")))
+        cli._scan("acme-ai", object(), store, lines.append, settings=app.settings)
+        assert lines == ["acme-ai: capability scan failed (ValueError: an answer it could not read)"]
+        assert sourcing.Scans.last(store, "acme-ai") is None
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("argv", [["capabilities", "acme-ai"], ["ai", "connect", "--assistant", "acme-ai"]])
+def test_the_commands_connect_an_assistant(installed, tmp_path, monkeypatch, capsys, argv):
+    """What the Plugins view's Rescan starts (`capabilities NAME`, in its own process) and `ai connect`."""
+    s = load_settings(env={"LIMINAL_DB": str(tmp_path / "m.db"), **CONNECT_ENV}, env_file=None)
+    session, build = _connect_session(), AcmeAI.build
+    monkeypatch.setattr(AcmeAI, "build", lambda self, settings, session_=None, now=None: build(self, settings, session=session, now=now))
+    args = cli.build_parser().parse_args(argv)
+    assert (cli.cmd_capabilities if argv[0] == "capabilities" else cli.cmd_ai)(args, s) == 0
+    out = capsys.readouterr().out
+    assert "acme-ai: yes the key: accepted: 2 models listed by the server" in out
+    assert "acme-ai: plan found: ACME_AI_PLAN=build" in out and KEY not in out and EMAIL not in out
+    assert len(session.calls) == 2
+    with Store(s.db_path) as store:
+        assert sourcing.Scans.last(store, "acme-ai")["plan"] == {"ACME_AI_PLAN": "build"}
