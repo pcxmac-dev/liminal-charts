@@ -2,18 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- interactive-widget: an on-screen keyboard shrinks the page above it (Chrome, Firefox); Safari lays it over the
+       page and touch.js makes the room (the user, 2026-11-10: "Support for virtual keyboard on tablets and phones") -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <title>Liminal Charts</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="visual-touch.css">
+  <link rel="stylesheet" href="views-touch.css">
 </head>
 <body>
   <!-- first: the page painted in the UI's theme at once (the library's theme.js: GET /api/ui, the theme every app's
        page shares on this machine; app.js styles the chart in it and saves a theme picked in Preferences there) -->
   <script src="theme.js"></script>
+  <!-- then touch screens and the on-screen keyboard (the library's touch.js: the long press, the tooltip bubble, the
+       keyboards, typing kept from redraws), before every script that looks for it (icons.js, menu.js, app.js) -->
+  <script src="touch.js"></script>
   <header id="topbar">
     <!-- The top bar's tools in strips, each a panel on the page's lighter grey (style.css, "Panels") -->
     <div class="strip">
-    <button id="symbolBtn" class="symbol" title="Switch symbol (/)"><span id="symbolLabel">Select symbol</span></button>
+    <button id="symbolBtn" class="symbol" title="Switch symbol (/)" data-tip="Tap to switch symbol"><span id="symbolLabel">Select symbol</span></button>
     <select id="feedSelect" title="Data feed" hidden></select><!-- picked in Preferences (prefs.js) -->
     </div>
     <div class="strip">
@@ -89,7 +96,8 @@
       <button id="indBtn" hidden aria-haspopup="true">Indicators</button>
       <div id="indMenu" class="dropdown" hidden></div>
     </div>
-    <button id="replayBtn" class="toggle analysis-only" title="Replay (Analysis view): click a bar to start from, then play the bars after it as if live">Replay</button>
+    <button id="replayBtn" class="toggle analysis-only" title="Replay (Analysis view): click a bar to start from, then play the bars after it as if live"
+            data-tip="Replay (Analysis view): tap a bar to start from, then play the bars after it as if live">Replay</button>
     </div>
     <div class="strip">
     <div class="menu layout-menu">
@@ -119,6 +127,10 @@
       <div id="chart"></div>
       <div id="panelResizer" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0"></div>
       <aside id="sidePanel" aria-label="Side panel">
+        <!-- on a phone the panel lies over the chart (style.css, below 700 px): this closes it, in a row of its own at the
+             panel's top, over none of the panel's own controls -->
+        <div class="panel-close-row"><button type="button" id="panelClose" class="panel-close" aria-label="Close the side panel"
+          title="Close the side panel">&times;</button></div>
         <div class="pane" id="paneStock" data-pane="stock">
           <section id="pSymbol"></section>
           <section id="pStats"></section>
@@ -151,7 +163,9 @@
         <canvas id="globe" aria-label="Globe: the sun's noon position faces you; open markets glow"></canvas>
         <div id="globeInfo" class="globe-info"></div>
         <div id="newsTicker" class="news-ticker" aria-live="polite" title="Announcements at the world's exchanges"></div>
-        <div class="globe-hint p-muted small">Drag to turn · scroll to zoom · click the sun to recentre</div>
+        <!-- a touch screen's words name the mouse's too: a touch screen may have a mouse (a laptop's) -->
+        <div class="globe-hint p-muted small"><span class="mouse-only">Drag to turn · scroll to zoom · click the sun to recentre</span><span
+          class="touch-only">Drag to turn · pinch or scroll to zoom · tap or click the sun to recentre</span></div>
       </div>
       <div id="marketsList" class="markets-list"></div>
     </div>
@@ -171,7 +185,8 @@
       <h4>Requests <span id="rqCounts" class="p-muted small"></span></h4>
       <div class="p-muted small">The fetcher's stack: a symbol opened in the chart, or asked for here, goes first; the fetcher assesses the work over the plugins (what each gives, at what cost) and collects. Its standing work queues behind.</div>
       <form id="rqForm" class="rq-form" autocomplete="off">
-        <input id="rqSymbol" type="text" placeholder="Symbol: AAPL, BTCUSD, NQ1!" maxlength="32" required aria-label="Symbol to fetch">
+        <input id="rqSymbol" type="text" placeholder="Symbol: AAPL, BTCUSD, NQ1!" maxlength="32" required aria-label="Symbol to fetch"
+               data-keyboard="ticker" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go">
         <label title="Also its current session, from the plugin whose stream is freshest"><input id="rqLive" type="checkbox"> live too</label>
         <button type="submit" class="primary" title="Ask the fetcher for everything about this symbol">Fetch</button>
         <span id="rqNote" class="p-muted small"></span>
@@ -230,13 +245,17 @@
   </main>
   <footer id="status">
     <span id="statusText">Loading…</span>
+    <!-- on a touch screen: why the chart is drawn on the CPU while the GPU is on (app.js renderGpuButton) -->
+    <span id="gpuNote" class="gpu-note touch-only" hidden></span>
     <span id="error" role="alert"></span>
     <span id="netStatus" class="net-status" aria-live="polite"><span id="netText"></span><span id="netBar" class="net-bar" hidden><span></span></span></span>
   </footer>
 
   <dialog id="symbolDialog" class="switcher" aria-label="Switch symbol">
     <form method="dialog" class="dialog-head">
-      <input id="symbolSearch" type="search" placeholder="Search ticker, name or exchange" autocomplete="off">
+      <!-- a ticker or a name, typed as it is; the keyboard's Go opens the best match -->
+      <input id="symbolSearch" type="search" placeholder="Search ticker, name or exchange" autocomplete="off"
+             data-keyboard="search" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
       <span id="scopeTabs" class="scope-tabs" role="tablist">
         <button type="button" data-scope="watch" role="tab">Watchlist</button>
         <button type="button" data-scope="stocks" role="tab" title="Every Nasdaq and NYSE listing">Nasdaq &amp; NYSE</button>
@@ -244,7 +263,7 @@
       </span>
       <button type="button" id="switcherView" title="Market map or tiles"></button>
       <button type="button" id="sortBtn" title="Sort order"></button>
-      <button value="close" aria-label="Close">&times;</button>
+      <button value="close" class="dialog-close" aria-label="Close">&times;</button>
     </form>
     <div id="symbolList" role="listbox" aria-label="Symbols"></div>
   </dialog>

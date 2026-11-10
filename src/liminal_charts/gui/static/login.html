@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- interactive-widget: an on-screen keyboard shrinks the page above it (Chrome, Firefox); Safari lays it over the
+       page and touch.js makes the room -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <title>Liminal Charts: sign in</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -14,6 +16,7 @@
      or make one. -->
 <body class="login-page">
   <script src="theme.js"></script>  <!-- first: painted in the UI's theme (the library's), the login app's page held in it -->
+  <script src="touch.js"></script>  <!-- then touch screens and the on-screen keyboard (the library's), the frame's fields too -->
   <main class="login login-main">
     <div id="loginIcon" class="login-icon" aria-hidden="true"></div>
     <h1>Liminal Charts</h1>
@@ -24,7 +27,8 @@
       <p class="p-muted">Choose your profile</p>
       <div id="profileList" class="login-profiles" role="list"></div>
       <form id="newProfile" class="login-new" autocomplete="off">
-        <input id="newName" type="text" maxlength="40" placeholder="New profile name" aria-label="New profile name">
+        <input id="newName" type="text" maxlength="40" placeholder="New profile name" aria-label="New profile name"
+               data-keyboard="name" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go">
         <button type="submit">Create</button>
       </form>
     </div>

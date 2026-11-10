@@ -11,6 +11,9 @@
   const { esc } = window.LiminalIcons;
   const SHOW = 300;  // product rows drawn at first ("show more" for the rest)
   let data = null, sel = null, list = null, picked = null, info = null, query = '', sector = '', shown = SHOW, timer = null;
+  let counted = '';  // the products shown of the venue's, as last drawn ("12 of 300")
+  // the keyboard a field calls up on a phone or a tablet (the library's touch.js)
+  const kb = (kind, more) => window.LiminalTouch?.keyboard(kind, more) || '';
 
   const STATE = { open: 'open', 'pre-market': 'pre-market', 'after-hours': 'after-hours', closed: 'closed' };
   const JOBS = { day: 'daily bars', minute: '1-minute', second: '1-second' };
@@ -55,7 +58,7 @@
     try {
       info = await api('/api/info', { source: '*', ticker });
     } catch (err) { info = { error: String(err.message || err) }; }
-    if (picked === ticker) renderSide();
+    if (picked === ticker) render();  // the insight drawn again (the other parts, unchanged, are left as they are)
   }
 
   // -- left: the venues, by group ---------------------------------------------------------
@@ -83,9 +86,12 @@
     if (!list || list.id !== sel) return '<div class="empty">Loading…</div>';
     const rows = rowsOf();
     const sectors = [...new Set(list.products.map((p) => p.sector))].sort();
-    return `<div class="ex-tools"><input type="search" id="exSearch" placeholder="Search ${esc(v.name)}" value="${esc(query)}">
+    // the search row drawn alike as it is typed in (its count set in place, panels.js Views.patch keeping the rest):
+    // the box is never replaced, so an on-screen keyboard's word and the caret stay where they are
+    counted = `${num(rows.length)} of ${num(list.products.length)}`;
+    return `<div class="ex-tools"><input type="search" id="exSearch" placeholder="Search ${esc(v.name)}" aria-label="Search ${esc(v.name)}" ${kb('search')}>
         <select id="exSector"><option value="">every sector</option>${sectors.map((s) => `<option${s === sector ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>
-        <span class="p-muted small">${num(rows.length)} of ${num(list.products.length)}</span></div>
+        <span class="p-muted small ex-counted"></span></div>
       <div class="table-wrap"><table class="act-table ex-table"><thead><tr><th>Symbol</th><th>Name</th><th>Sector</th>
         <th>Feeds</th><th>Collected</th><th class="num">Last day</th></tr></thead><tbody>
       ${rows.slice(0, shown).map((p) => `<tr class="has-data${p.ticker === picked ? ' active' : ''}" data-product="${esc(p.ticker)}">
@@ -113,7 +119,7 @@
         ${tile('Fresh', pct(c.fresh, v.products), `synced in the last 2 days · newest ${ago(c.newest)}`)}
         ${tile('Feeds', num(v.feeds.length), esc(v.feeds.map(([f, n]) => `${f} ${num(n)}`).join(' · ')))}
       </div>
-      <h4>By sector</h4>
+      <h4>By sector <span class="touch-only ex-hint">tap one to show only it</span></h4>
       <div class="ex-bars">${v.sectors.map(([s, n]) => `<div class="ex-bar" data-sector="${esc(s)}" title="Show only ${esc(s)}">
         <span>${esc(s)}</span><i style="width:${Math.max(2, (n / top) * 100).toFixed(1)}%"></i><b>${num(n)}</b></div>`).join('')}</div>
       ${v.movers.up.length || v.movers.down.length ? `<h4>Last session's movers</h4>
@@ -152,53 +158,81 @@
     return v ? venueInsight(v) : '<div class="empty">Pick an exchange.</div>';
   }
 
-  function renderSide() {
-    const side = box.querySelector('.ex-side');
-    if (side) side.innerHTML = sideHtml();
-  }
-
+  // The three columns stay; each is drawn again in its parts, a part only when it changed (panels.js Views.patch): a
+  // search typed in keeps its box, every column its place (each scrolls on its own), and nothing is drawn again under a
+  // finger (its tap lands) or while a finger's scroll moves (the user, 2026-11-10: "I want to support touch as well as
+  // mouse clicking on the interface").
   function render() {
     if (!data) { box.innerHTML = '<div class="empty">Loading the exchanges…</div>'; return; }
-    const focus = document.activeElement?.id;
     const v = venue();
-    const scrolled = box.querySelector('.ex-list')?.scrollTop || 0;
-    box.innerHTML = `
-      <div class="ex-venues"><div class="view-head"><div><h2>Exchanges</h2>
+    const cols = [
+      `<div class="view-head"><div><h2>Exchanges</h2>
         <div class="p-muted small">${num(data.venues.reduce((a, x) => a + x.products, 0))} products on ${num(data.venues.length)} venues</div></div></div>
-        ${venuesHtml()}</div>
-      <div class="ex-list"><div class="view-head"><div><h2>${esc(v?.name || '')}</h2>
-        <div class="p-muted small">${esc(v ? `${v.group} · ${v.hours}` : '')}</div></div></div>${productsHtml()}</div>
-      <aside class="ex-side">${sideHtml()}</aside>`;
-    box.querySelector('.ex-list').scrollTop = scrolled;
-    if (focus === 'exSearch') {
-      const input = document.getElementById('exSearch');
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    }
+        ${venuesHtml()}`,
+      `<div class="view-head"><div><h2>${esc(v?.name || '')}</h2>
+        <div class="p-muted small">${esc(v ? `${v.group} · ${v.hours}` : '')}</div></div></div>${productsHtml()}`,
+      sideHtml(),
+    ];
+    window.Views.redraw(box, () => paint(cols));
   }
 
+  function paint([left, middle, side]) {
+    const [a, b, c] = box.children;
+    if (box.children.length !== 3 || !a.matches('.ex-venues') || !b.matches('.ex-list') || !c.matches('.ex-side')) {
+      const keep = [...box.querySelectorAll('.ex-venues, .ex-list, .ex-side')].map((el) => el.scrollTop);
+      box.innerHTML = `<div class="ex-venues">${left}</div><div class="ex-list">${middle}</div><aside class="ex-side">${side}</aside>`;
+      box.querySelectorAll('.ex-venues, .ex-list, .ex-side').forEach((el, i) => { el.scrollTop = keep[i] || 0; });
+    } else {
+      window.Views.patch(a, left, render);
+      window.Views.patch(b, middle, render);
+      window.Views.patch(c, side, render);
+    }
+    const count = box.querySelector('.ex-counted');
+    if (count && count.textContent !== counted) count.textContent = counted;
+    const input = document.getElementById('exSearch');  // drawn new (another venue): its search as it stands
+    if (input && document.activeElement !== input && input.value !== query) input.value = query;
+  }
+
+  // A pick (a venue, a product, back, a sector) is the user's own move: the search box still focused (Safari keeps it
+  // so when a row or a button is tapped) is let go first, so the page is drawn whole for what was picked (the row
+  // holding a field typed in is kept as it was: the venue left's search and sectors over the new one's products). On a
+  // phone (the columns stacked) what the pick changed, below and out of sight, is brought into view; back from a
+  // product, the products where they were.
+  let backTo = null;  // the view's scroll before a product's insight was brought into view (a phone's)
   box.addEventListener('click', (e) => {
     const t = e.target.closest('[data-venue],[data-product],[data-more],[data-back],[data-open],[data-sector]');
     if (!t) return;
     if (t.dataset.venue && t.dataset.venue !== sel) {
-      sel = t.dataset.venue; list = null; picked = null; info = null; query = ''; sector = ''; shown = SHOW;
+      window.Views.letGo(box);
+      sel = t.dataset.venue; list = null; picked = null; info = null; query = ''; sector = ''; shown = SHOW; backTo = null;
       render();
+      window.Views.reveal(box.querySelector('.ex-list'));
       loadList().then(render);
     } else if (t.dataset.product) {
+      window.Views.letGo(box);
+      const at = box.scrollTop;
       pick(t.dataset.product);
+      if (window.Views.reveal(box.querySelector('.ex-side'))) backTo = backTo ?? at;
     } else if (t.dataset.more) {
       shown += SHOW; render();
     } else if (t.dataset.back) {
+      window.Views.letGo(box);
       picked = null; info = null; render();
+      if (backTo != null) { box.scrollTop = backTo; backTo = null; }
     } else if (t.dataset.open) {
       window.openSymbol?.(t.dataset.open);
       window.showPane?.('stock');
     } else if (t.dataset.sector) {
+      window.Views.letGo(box);
       sector = t.dataset.sector; shown = SHOW; render();
+      window.Views.reveal(box.querySelector('.ex-list'));
     }
   });
   box.addEventListener('input', (e) => {
     if (e.target.id === 'exSearch') { query = e.target.value; shown = SHOW; render(); }
+  });
+  box.addEventListener('keydown', (e) => {  // an on-screen keyboard's Search: put away, so the products it found show
+    if (e.key === 'Enter' && e.target.id === 'exSearch' && window.Views.softKeyboard()) e.target.blur();
   });
   box.addEventListener('change', (e) => {
     if (e.target.id === 'exSector') { sector = e.target.value; shown = SHOW; render(); }

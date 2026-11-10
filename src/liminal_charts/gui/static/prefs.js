@@ -26,9 +26,14 @@
                        how strongly it is laid on, 0-200 % of its standard strength (100 %: the strength
                        set 2026-10-28, half the blue and violet before)
      Views             the rail's views, each with a switch (the library's): a view turned off by a right click
-                       on its icon is turned on again here (panels.js Views); Stock and Preferences stay on
+                       or a long press on its icon is turned on again here (panels.js Views); Stock and
+                       Preferences stay on
 
-   Kept per profile, as the rest of the page's settings are (app.js prefs), but the theme: the machine's. */
+   Kept per profile, as the rest of the page's settings are (app.js prefs), but the theme: the machine's.
+   On a touch screen (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface";
+   "Support for virtual keyboard on tablets and phones"): what a mouse reads in a row's tooltip and a finger needs
+   (why a control is off, what a chart type or a shading is) is said under it, the controls are a finger's size
+   (views-touch.css), and the pane is never drawn again while its colour field is typed in. */
 (() => {
   const { esc, icon } = window.LiminalIcons;
   const SHADES = [
@@ -57,11 +62,16 @@
   const nameOf = (k) => (isCandle(k) ? `${CANDLES.find(([x]) => x === k)[1]} candles` : SHADES.find(([x]) => x === k)[1]);
   const swatchHtml = (k, what) => `<button type="button" class="pref-swatch" data-color="${k}" style="background:${colorOf(k)}"
     aria-haspopup="dialog" aria-expanded="false" title="${esc(`${nameOf(k)} (${what}): ${colorOf(k)}${colorOf(k) === standardOf(k)
-      ? (isCandle(k) ? ", TradingView's" : ', standard') : ''}. Click to pick`)}"></button>`;
+      ? (isCandle(k) ? ", TradingView's" : ', standard') : ''}. ${window.LiminalTouch?.touch ? 'Click or tap' : 'Click'} to pick`)}"></button>`;
 
   const shown = () => document.body.dataset.pane === 'prefs';
   const typeOption = (o) => `<option value="${esc(o.value)}"${o.value === state.chartType ? ' selected' : ''}${o.disabled ? ' disabled' : ''}`
     + `${o.title ? ` title="${esc(o.title)}"` : ''}>${esc(o.textContent)}</option>`;
+  // a row's words a finger needs, under it on a touch screen (its tooltip is a mouse's; an option's never shows at all)
+  const why = (words) => (words ? `<div class="p-muted small touch-only pref-why">${esc(words)}</div>` : '');
+  // the keyboard a field calls up on a phone or a tablet (the library's touch.js)
+  const kb = (kind, more) => window.LiminalTouch?.keyboard(kind, more) || '';
+  const whenIdle = (root, fn) => (window.LiminalTouch ? window.LiminalTouch.whenIdle(root, fn) : fn());
 
   function render() {
     const box = $('pPrefs');
@@ -70,6 +80,7 @@
     const fixed = !!state.meta?.aroundTheClock;  // fx and futures: no sessions to pick
     const feeds = [...$('feedSelect').options];
     const gpu = window.gpuState?.() || { on: false, supported: false, title: '' };
+    const type = [...$('typeSelect').querySelectorAll('option')].find((o) => o.value === state.chartType);
     box.innerHTML = `
       <h3>Preferences</h3>
       <div class="p-sub">Data</div>
@@ -77,6 +88,7 @@
         <select id="prefFeed"${feeds.length < 2 ? ' disabled' : ''}>${feeds.map((o) =>
           `<option value="${esc(o.value)}"${o.value === state.source ? ' selected' : ''}>${esc(o.textContent)}</option>`).join('')}
         </select></label>
+      ${feeds.length < 2 ? why(feeds.length ? `${state.ticker || 'This symbol'} comes from one feed only: nothing to pick` : 'No symbol is open yet') : ''}
       <label class="pref-row pref-gpu" title="${esc($('unfilteredBtn').title)}"><span>All data</span>
         <span><input type="checkbox" id="prefUnfiltered"${state.unfiltered ? ' checked' : ''}> bad data included</span></label>
       <div class="p-sub">Indicators</div>
@@ -100,26 +112,30 @@
         <select id="prefType">${[...$('typeSelect').children].map((g) => g.tagName === 'OPTGROUP'
           ? `<optgroup label="${esc(g.label)}">${[...g.children].map(typeOption).join('')}</optgroup>` : typeOption(g)).join('')}
         </select></label>
+      ${why(type?.title)}
       <label class="pref-row pref-session" title="The page's and the chart's colours: the UI's theme, the same on every app's page on this machine (the platform's Preferences picks it too)"><span>Theme</span>
         <select id="prefTheme">${Object.entries(THEMES).map(([t, th]) =>
           `<option value="${esc(t)}"${t === state.theme ? ' selected' : ''}>${esc(th.label)} (${th.base === 'light' ? 'light' : 'dark'})</option>`).join('')}
         </select></label>
       <label class="pref-row pref-gpu" title="${esc(gpu.title)}"><span>Drawing</span>
         <span><input type="checkbox" id="prefGpu"${gpu.on && gpu.supported ? ' checked' : ''}${gpu.supported ? '' : ' disabled'}> on the GPU</span></label>
+      ${why(gpu.title)}
       <div class="pref-row pref-candles"><span class="pref-candles-head">Candles</span>
         ${CANDLES.map(([k, name, what]) => `<span>${swatchHtml(k, what)}${esc(name)}</span>`).join('')}</div>
-      <div class="p-sub">Views <span class="p-muted small">on the rail: a right click on an icon disables its view, its switch here enables it again</span></div>
+      <div class="p-sub">Views <span class="p-muted small">on the rail: a right click or a long press on an icon disables its view, its switch here enables it again</span></div>
       ${(window.Views?.list() || []).map((v) => `
         <div class="pref-row pref-view"${v.fixed ? ` title="${esc(v.name === 'prefs' ? 'Where the views are enabled again: always on the rail' : "The app's own icon (the symbol's): always on the rail")}"` : ''}>
           <span class="pref-view-name">${icon(v.icon, 18)}${esc(v.title)}</span>
           <label class="switch-row"><button type="button" class="switch" role="switch" aria-checked="${v.on}" aria-label="${esc(v.title)}"
-            data-view="${esc(v.name)}"${v.fixed ? ' disabled' : ''}></button><span>${v.on ? 'Enabled' : 'Disabled'}</span></label></div>`).join('')}
+            data-view="${esc(v.name)}"${v.fixed ? ' disabled' : ''}></button><span>${v.on ? 'Enabled' : 'Disabled'}</span></label></div>
+        ${v.fixed ? why(v.name === 'prefs' ? 'Always on the rail: the views are enabled again here' : "Always on the rail: the app's own icon, the symbol's") : ''}`).join('')}
       <div class="p-sub">Session shading <span class="p-muted small">on intraday stock charts: its colour, and its strength (100 % standard)</span></div>
       ${SHADES.map(([k, name, what]) => `
         <div class="pref-row pref-shade" title="${esc(`${name}: ${what}`)}">
           <span>${swatchHtml(k, what)}${esc(name)}</span>
           <input type="range" min="0" max="200" step="5" data-shade="${k}" value="${state.shade[k]}" aria-label="${esc(name)} shading strength">
-          <output>${state.shade[k]} %</output></div>`).join('')}
+          <output>${state.shade[k]} %</output></div>
+        ${why(what)}`).join('')}
       <button type="button" id="prefShadeReset" class="pref-reset">Standard colours and strength</button>`;
   }
 
@@ -161,7 +177,7 @@
         `<button type="button" data-pick="${c}" style="background:${c}" title="${c}${c === standardOf(k) ? (isCandle(k) ? " (TradingView's)" : ' (standard)') : ''}" aria-label="${c}"></button>`).join('')}</div>
       <div class="pref-pop-row">
         <input type="color" class="pref-pop-any" aria-label="Any colour (the system's picker)" title="Any colour: the system's picker">
-        <input type="text" class="pref-pop-hex" maxlength="7" spellcheck="false" aria-label="Colour as #rrggbb">
+        <input type="text" class="pref-pop-hex" maxlength="7" spellcheck="false" aria-label="Colour as #rrggbb" ${kb('plain', { spellcheck: null })}>
       </div>
       <div class="pref-pop-row">
         <button type="button" data-pick="" class="pref-reset">${isCandle(k) ? 'TradingView\'s' : 'Standard'}</button>
@@ -266,8 +282,13 @@
     if (pop && !pop.contains(e.target) && !e.target.closest('.pref-swatch')) closePop();
   });
   document.addEventListener('keydown', (e) => { if (pop && e.key === 'Escape') { e.stopPropagation(); closePop(true); } }, true);
-  // the toolbar's picker changed, a symbol opened (around the clock or not), the pane shown
-  const again = () => { if (shown()) { closePop(); render(); } };
+  $('pPrefs').addEventListener('keydown', (e) => {  // an on-screen keyboard's Done in the colour's field: put away
+    if (e.key === 'Enter' && e.target.classList.contains('pref-pop-hex') && window.Views?.softKeyboard?.()) e.target.blur();
+  });
+  // the toolbar's picker changed, a symbol opened (around the clock or not), the pane shown; never while the colour's
+  // field is typed in (a candle's colour typed whole draws the chart again, which said so): once it is left, and not
+  // under a finger (a tap on the popup's palette lands first)
+  const again = () => { if (shown()) whenIdle($('pPrefs'), () => window.Views.redraw($('pPrefs'), () => { if (shown()) { closePop(); render(); } })); };
   $('sessionSelect').addEventListener('change', again);
   window.addEventListener('liminal:symbol', again);
   window.addEventListener('liminal:feeds', again);

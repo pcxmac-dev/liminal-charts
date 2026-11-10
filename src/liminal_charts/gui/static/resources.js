@@ -9,7 +9,8 @@
   const { esc } = window.LiminalIcons;
   let data = null, span = 'recent', timer = null;
   const open = new Set();  // file folders shown file by file
-  const sparks = new Map();  // sparkline key -> { t, values, fmt } (for its hover)
+  let sparks = new Map();  // sparkline key -> { t, values, fmt } (for its hover), of the sparklines on screen
+  let building = null;  // the next drawing's, while it is made (it goes on screen when no finger holds the view)
   const tip = document.createElement('div');
   tip.className = 'res-tip';
   tip.hidden = true;
@@ -31,11 +32,13 @@
   const clock = (s) => new Date(s * 1000).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false });
 
   // A sparkline of a series over the range shown, scaled to `max` (or its own highest); hovering
-  // shows the value at that time.
+  // shows the value at that time. On a touch screen it is drawn taller (views-touch.css) and stretched to its box, for
+  // a finger to read it by.
   function spark(key, values, fmt, { w = 120, h = 26, max = null } = {}) {
-    sparks.set(key, { t: data.series.t, values, fmt });
+    (building || sparks).set(key, { t: data.series.t, values, fmt });
     const nums = values.filter((v) => v != null);
-    const head = `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" data-spark="${esc(key)}" aria-hidden="true">`;
+    const fit = window.LiminalTouch?.touch ? ' preserveAspectRatio="none"' : '';
+    const head = `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"${fit} data-spark="${esc(key)}" aria-hidden="true">`;
     if (nums.length < 2) return `${head}</svg>`;
     const top = (max ?? Math.max(...nums)) || 1;
     let d = '', pen = false;
@@ -86,7 +89,9 @@
     return data.processes.map((p) => {
       const ser = s.processes[p.key] || { cpu: [], memory: [] };
       const c = p.connections || { established: 0, listening: 0, other: 0 };
-      const ends = (p.remotes || []).map((r) => `<span class="res-remote${r.local ? ' local' : ''}" title="${esc(r.state)}">${esc(r.remote)}${r.count > 1 ? ` ×${r.count}` : ''}${r.local ? ' (this machine)' : ''}</span>`).join('');
+      // a remote end's state in words on a touch screen too (its tooltip is a mouse's)
+      const ends = (p.remotes || []).map((r) => `<span class="res-remote${r.local ? ' local' : ''}" title="${esc(r.state)}">${esc(r.remote)}${r.count > 1 ? ` ×${r.count}` : ''}${r.local ? ' (this machine)' : ''}${
+        r.state ? `<span class="touch-only"> · ${esc(r.state)}</span>` : ''}</span>`).join('');
       const more = p.remoteCount > (p.remotes || []).length ? ` (the busiest ${p.remotes.length} of ${p.remoteCount})` : '';
       return `<tr>
           <td><b>${esc(p.label)}</b>${p.self ? ' <span class="chip">this app</span>' : ''}<div class="sub" title="${esc(p.command)}">${esc(p.command || '')}</div></td>
@@ -115,12 +120,11 @@
   function render() {
     if (document.body.dataset.view !== 'resources') return;
     if (!data) { box.innerHTML = '<div class="empty">Loading…</div>'; return; }
-    sparks.clear();
+    building = new Map();
     const { machine: m, network: net, connections: links, monitor: mon, files } = data;
     const s = data.series;
     const dataDisk = files?.disks.find((d) => d.holds.includes('data'));
     const grown = files?.groups.every((g) => g.growth != null) ? files.groups.reduce((a, g) => a + g.growth, 0) : null;
-    const scrolled = box.scrollTop;  // drawn again every couple of seconds: the reader stays where they were
     const tiles = [
       m ? tile('CPU', pct(m.cpu), `of all ${m.cpus} cores`, spark('cpu', s.cpu, pct, { max: 1 })) : '',
       m ? tile('Memory', bytes(m.memoryUsed), `of ${bytes(m.memoryTotal)} · ${pct(m.memoryUsed / m.memoryTotal)}`,
@@ -132,7 +136,7 @@
       dataDisk ? tile('Data disk', `${bytes(dataDisk.free)} free`, `of ${bytes(dataDisk.total)} · ${esc(dataDisk.path)}`, meter(dataDisk.used / dataDisk.total)) : '',
       files ? tile('Data files', bytes(files.total), `${files.count.toLocaleString()}${files.capped ? '+' : ''} files · ${grown == null ? 'growth after a minute' : growth(grown)}`) : '',
     ].join('');
-    box.innerHTML = `
+    const html = `
       <div class="view-head"><div><h2>Resources</h2>
         <div class="p-muted small">The app's processes, the machine, its network and the data files: sampled every ${data.cadence.viewing} s
           while this view is open, every ${data.cadence.background} s otherwise. This monitor: ${core(mon.cpu)} of a core
@@ -158,7 +162,18 @@
         <th class="num">Growth</th><th>Modified</th></tr></thead><tbody>${fileRows(files)}</tbody></table></div>
       <div class="p-muted small res-note">Growth is over the last hour (from a minute after the app started); a folder opens to its largest files.</div>` : ''}
       ${depsHtml()}`;
-    box.scrollTop = scrolled;
+    const built = building;
+    building = null;
+    // Drawn again every couple of seconds, each part only when it changed (a wide table keeps its sideways scroll), and
+    // never under a finger (a tap on a folder lands, a sparkline being read stays) nor while a finger's scroll moves
+    // (panels.js Views; the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface").
+    window.Views.redraw(box, () => {
+      sparks = built;
+      const scrolled = box.scrollTop;  // drawn again every couple of seconds: the reader stays where they were
+      window.Views.patch(box, html, render);
+      // (its scroll the page's own, Views.ownScroll: a sparkline's reading stays up)
+      if (box.scrollTop !== scrolled) { box.scrollTop = scrolled; window.Views.ownPlace(box); }
+    });
   }
 
   box.addEventListener('click', (e) => {
@@ -170,18 +185,54 @@
       render();
     }
   });
-  box.addEventListener('mousemove', (e) => {
-    const svg = e.target.closest('svg[data-spark]');
+  // The time and the value under the pointer on a sparkline: a mouse's (and a hovering pen's) as it moves over it; a
+  // finger's (a pen's pressed) while it is held on it and as it moves sideways, above it, staying after the lift until a
+  // tap elsewhere or a scroll (an upward or downward swipe scrolls the page: views-touch.css, touch-action pan-y).
+  function readAt(svg, x, y, above) {
     const sp = svg && sparks.get(svg.dataset.spark);
     if (!sp || sp.values.length < 2) { tip.hidden = true; return; }
     const r = svg.getBoundingClientRect();
-    const i = Math.max(0, Math.min(sp.values.length - 1, Math.round(((e.clientX - r.left) / r.width) * (sp.values.length - 1))));
+    const i = Math.max(0, Math.min(sp.values.length - 1, Math.round(((x - r.left) / r.width) * (sp.values.length - 1))));
     tip.textContent = `${clock(sp.t[i])} ET · ${sp.values[i] == null ? 'not running' : sp.fmt(sp.values[i])}`;
     tip.hidden = false;
-    tip.style.left = `${Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8)}px`;
-    tip.style.top = `${e.clientY + 14}px`;
+    tip.style.left = `${Math.min(x + 12, innerWidth - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${above ? Math.max(8, y - tip.offsetHeight - 28) : y + 14}px`;
+  }
+  let reading = null;  // {id, svg}: the finger reading a sparkline
+  box.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    const svg = e.target.closest('svg[data-spark]');
+    if (!svg) { tip.hidden = true; return; }  // a tap elsewhere: the reading goes
+    reading = { id: e.pointerId, svg };
+    try { svg.setPointerCapture(e.pointerId); } catch { /* not captured: its moves over the sparkline still read */ }
+    readAt(svg, e.clientX, e.clientY, true);
   });
-  box.addEventListener('mouseleave', () => { tip.hidden = true; });
+  box.addEventListener('pointermove', (e) => {
+    if (reading && e.pointerId === reading.id) { readAt(reading.svg, e.clientX, e.clientY, true); return; }
+    if (e.pointerType === 'touch' || (e.pointerType === 'pen' && e.buttons)) return;  // held on a sparkline only (above)
+    readAt(e.target.closest('svg[data-spark]'), e.clientX, e.clientY, false);
+  });
+  const doneReading = (e) => {
+    if (!reading || e.pointerId !== reading.id) return;
+    reading = null;
+    if (e.type === 'pointercancel') tip.hidden = true;  // taken by a scroll: no reading left behind
+  };
+  box.addEventListener('pointerup', doneReading);
+  box.addEventListener('pointercancel', doneReading);
+  box.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') tip.hidden = true; });
+  document.addEventListener('pointerdown', (e) => { if (!tip.hidden && !box.contains(e.target)) tip.hidden = true; }, true);
+  // a scroll moves the sparkline from under its reading: it goes; not the view's own redraw giving a table back its
+  // place (every couple of seconds: Views.ownScroll), which moves nothing
+  document.addEventListener('scroll', (e) => {
+    if (!tip.hidden && !window.Views.ownScroll(e)) tip.hidden = true;
+  }, { capture: true, passive: true });
+  // a finger held on a sparkline reads it: no browser menu opens as it lifts (Windows makes one of a finger's press
+  // and hold); a mouse's right click as before
+  box.addEventListener('contextmenu', (e) => {
+    if (!e.target.closest?.('svg[data-spark]')) return;
+    const by = window.LiminalTouch?.lastInput;
+    if (e.pointerType ? e.pointerType !== 'mouse' : by === 'touch' || by === 'pen') e.preventDefault();
+  });
   window.addEventListener('liminal:view', (e) => {
     if (e.detail.view === 'resources') load(); else { clearTimeout(timer); tip.hidden = true; }
   });

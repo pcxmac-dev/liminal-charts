@@ -67,7 +67,12 @@
       });
       if (my === token) render(c && res.range ? { ...res, over: c.over } : res);
     } catch (err) {
-      if (my === token) $('pLevel2').innerHTML = `<h3>Virtual level 2</h3><div class="p-muted">${esc(err.message || err)}</div>`;
+      if (my === token) {
+        const box = $('pLevel2'), note = `<div class="p-muted">${esc(err.message || err)}</div>`;
+        // under the heading and its picker while that picker is open (below), else under the heading alone, as before
+        if (document.activeElement && document.activeElement === $('l2Step')) paint(box, false, note);
+        else box.innerHTML = `<h3>Virtual level 2</h3>${note}`;
+      }
     } finally {
       busy = false;
       if (again) { again = false; schedule(0); }
@@ -118,13 +123,27 @@
     return { cls, tags };
   }
 
+  // The heading and its price-segment picker are drawn once and kept across the redraws (a live symbol's every few
+  // seconds): only what is under them is written again, so a picker open on a phone or a tablet (slower to use than a
+  // mouse's list) is never replaced under the finger, its choice lost (the user, 2026-11-10: "I want to support touch as
+  // well as mouse clicking on the interface"). The heading's star (derived rows) is shown or hidden in place.
+  function paint(box, derived, rest) {
+    let h = box.firstElementChild;
+    if (!h || h.localName !== 'h3' || !h.querySelector('#l2Step')) {
+      box.innerHTML = `<h3>Virtual level 2<sup class="l2-star" hidden>*</sup> <select id="l2Step" title="Price segment: rows sum the volume in each (derived)">${STEPS.map((s) =>
+        `<option value="${s}"${s === step ? ' selected' : ''}>${money(s)}</option>`).join('')}</select></h3>`;
+      h = box.firstElementChild;
+    }
+    h.querySelector('.l2-star').hidden = !derived;
+    while (h.nextSibling) h.nextSibling.remove();
+    h.insertAdjacentHTML('afterend', rest);
+  }
+
   function render(p) {
     const box = $('pLevel2');
-    const select = `<select id="l2Step" title="Price segment: rows sum the volume in each (derived)">${STEPS.map((s) =>
-      `<option value="${s}"${s === step ? ' selected' : ''}>${money(s)}</option>`).join('')}</select>`;
     const range = p.range;  // a stretch of bars (in view, or the highlight's) rather than one bar
     if (!p.rows?.length) {
-      box.innerHTML = `<h3>Virtual level 2 ${select}</h3><div class="p-muted">Nothing traded in ${overText(p)}.</div>`;
+      paint(box, false, `<div class="p-muted">Nothing traded in ${overText(p)}.</div>`);
       lastProfile = null;
       return;
     }
@@ -141,8 +160,7 @@
     const id = `${key()}|${at}|${step}|${range ? `${range.from}-${range.to}` : ''}`;
     const kept = shownFor === id ? box.querySelector('.l2-wrap')?.scrollTop : null;  // a refresh keeps the scroll
     const bars = (n) => `${n.toLocaleString()} ${p.period === 'day' && p.span === 1 ? 'daily' : `${p.span}-${p.period}`} bar${n === 1 ? '' : 's'}`;
-    box.innerHTML = `
-      <h3>Virtual level 2${star} ${select}</h3>
+    paint(box, derived, `
       <div class="p-muted small">${range
         ? `${p.over === 'view' ? 'In view' : 'Highlight'} · ${esc(bars(range.bars))} · ${esc(spanText(p))}`
         : `${esc(p.period === 'day' ? 'Day' : `${p.span} ${p.period}`)} bar · ${esc(when(p))}${p.newest ? ' · newest' : ''}`}</div>
@@ -169,7 +187,7 @@
       ${m?.poc != null ? `<div class="p-sub l2-note">POC: the most traded price. VAH–VAL: the value area around it holding ${Math.round(m.valueArea * 100)}% of the volume (shaded). HVN: another peak with at least half the POC's volume.</div>` : ''}
       <div class="p-sub l2-note">${esc(p.note)}</div>
       ${derived ? `<div class="p-sub l2-note">* Derived data, not actual level 2 data: ${esc(p.derived)}.</div>` : ''}
-      <div class="p-sub l2-note">From ${esc(p.basis)}.</div>`;
+      <div class="p-sub l2-note">From ${esc(p.basis)}.</div>`);
     const wrap = box.querySelector('.l2-wrap'), row = box.querySelector(range ? 'tr.poc' : 'tr.at');
     if (kept != null) wrap.scrollTop = kept;
     else if (row) wrap.scrollTop = row.offsetTop - wrap.clientHeight / 2;  // new bars: their POC (one bar: its price) in the middle
@@ -187,18 +205,45 @@
   // The ladder follows the cursor's price, not its time: the row at the price under the cursor is
   // marked and kept in view (the edge row nearest it when it is beyond what traded in the bars).
   let markFrame = 0;
+  let crossTime = 0;  // when the crosshair last changed (performance.now())
   function followCursor(c) {
     let price = null;
     if (c?.paneId === 'candle_pane' && Number.isFinite(c.y)) {
       const [pt] = chart.convertFromPixel([{ x: c.x, y: c.y }], { paneId: 'candle_pane' });
       price = Number.isFinite(pt?.value) ? pt.value : null;
     }
+    crossTime = performance.now();
     if (price === cursorPrice) return;
     cursorPrice = price;
     if (!markFrame) markFrame = requestAnimationFrame(() => { markFrame = 0; markCursor(); });
   }
   chart.subscribeAction('onCrosshairChange', followCursor);
   $('chart').addEventListener('mouseleave', () => { cursorPrice = null; markCursor(); });
+  // A finger (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface"): the chart
+  // library puts its crosshair where a finger taps or holds and moves it with that finger, and takes it away, saying
+  // nothing, when a finger lands away from it (to pan, pinch or tap elsewhere); and no mouse leaves the chart. So once
+  // a finger lifts, and the library has had its tap, the row marked goes if the crosshair has gone; a tap or a hold
+  // marks the price it lands on, kept after the finger lifts, as the crosshair is. A pen alike (an iPad's Pencil reaches
+  // the library as a touch; where a pen moves it as a mouse does, its crosshair is still there and nothing goes).
+  const crosshairDown = () => {  // the library's crosshair on a pane now; null where its store cannot be read
+    const c = chart._chartStore?.getCrosshair?.();
+    return c ? typeof c.paneId === 'string' && Number.isFinite(c.y) : null;
+  };
+  let touchDown = null;  // {id, since}: a finger (or a pen) on the chart
+  $('chart').addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' && e.isPrimary) touchDown = { id: e.pointerId, since: performance.now() };
+  }, true);
+  function touchLifted(e) {
+    const p = touchDown;
+    if (!p || p.id !== e.pointerId) return;
+    touchDown = null;
+    setTimeout(() => {  // after the library's own handling of the lift (a tap puts its crosshair down then)
+      const down = crosshairDown();
+      if (cursorPrice != null && (down === false || (down === null && crossTime < p.since))) { cursorPrice = null; markCursor(); }
+    }, 0);
+  }
+  $('chart').addEventListener('pointerup', touchLifted, true);
+  $('chart').addEventListener('pointercancel', touchLifted, true);
 
   function markCursor() {
     const box = $('pLevel2'), p = lastProfile;

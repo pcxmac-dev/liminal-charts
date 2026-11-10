@@ -304,33 +304,62 @@
     ];
   }
 
+  // On a touch screen (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface";
+  // "Support for virtual keyboard on tablets and phones"): what a mouse reads hovering a setting (its title) shows
+  // under each one behind the ⓘ in the heading, and each number calls up the keypad it needs, its Enter key a Go (it
+  // runs). LiminalTouch.keyboard: touch.js's attributes for a field's keyboard (none without it).
+  const kb = (kind, more) => (window.LiminalTouch ? window.LiminalTouch.keyboard(kind, more) : '');
+  const why = (text) => (text ? `<span class="sch-why">${esc(text)}</span>` : '');
+  let explained = false;  // the explanations shown (a touch screen's ⓘ pressed)
+  let picker = null, pickerHeld = false;  // a select a finger opened; a redraw waiting for it to be left (below)
+  // a number's keypad: the digits for a whole number of 0 or more, digits and a point for any other of 0 or more, and
+  // the full numbers keyboard where it may be negative (the phones' keypads have no minus)
+  function keypad(p) {
+    const lo = p.lo == null || p.lo === '' ? NaN : Number(p.lo), st = Number(p.step);
+    return !(lo >= 0) ? 'signed' : Number.isInteger(st) && st >= 1 ? 'number' : 'decimal';
+  }
+
   function paramInput(p) {
     const v = cfg.params[p.key] ?? p.default;
     if (p.choices.length) {
       return `<label title="${esc(p.about)}">${esc(p.label)} <select data-param="${esc(p.key)}">${p.choices
-        .map((c) => `<option${c === v ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>`;
+        .map((c) => `<option${c === v ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>${why(p.about)}</label>`;
     }
     return `<label title="${esc(p.about)}">${esc(p.label)} <input type="number" data-param="${esc(p.key)}" value="${esc(String(v))}"
-      min="${esc(p.lo)}" max="${esc(p.hi)}" step="${esc(p.step)}"></label>`;
+      min="${esc(p.lo)}" max="${esc(p.hi)}" step="${esc(p.step)}" ${kb(keypad(p), 'go')}>${why(p.about)}</label>`;
   }
 
+  // A redraw never replaces a field being typed in (the user, 2026-11-10: typing is never interrupted by a redraw): one
+  // asked meanwhile (the view scrolled, a replay's bar closed) waits until the field is left (touch.js whenIdle), and
+  // the latest asked is drawn then.
   function render() {
     const box = $('pSchemes');
     if (!box) return;
+    if (window.LiminalTouch) window.LiminalTouch.whenIdle(box, () => paint(box));
+    else paint(box);
+  }
+
+  function paint(box) {
+    pickerHeld = false;  // what a select held back (below) is drawn now
     const s = scheme();
     if (!s) { box.innerHTML = '<h3>Schemes</h3><div class="p-muted">Loading…</div>'; return; }
     const r = current() ? S.result : null;
     const trades = r ? visibleTrades() : [];
     const range = stretch();
+    const FEE = 'Fee charged at every entry and exit, basis points of what is traded';
+    const SLIP = 'Slippage charged at every entry and exit, basis points';
+    const LONG = 'Short decisions only close a long';
+    box.classList.toggle('sch-explained', explained);
     box.innerHTML = `
-      <h3>Schemes ${S.result ? '<button id="schClear" title="Remove the scheme from the chart">Clear</button>' : ''}
+      <h3>Schemes <button type="button" id="schInfo" class="touch-only" aria-pressed="${explained}" title="What each setting does"
+          aria-label="What each setting does">ⓘ</button>${S.result ? '<button id="schClear" title="Remove the scheme from the chart">Clear</button>' : ''}
         <button id="schRun" class="primary" title="Run over ${esc(range?.over || 'the chart')}"${S.running ? ' disabled' : ''}>${S.running ? 'Running…' : 'Run'}</button></h3>
       <select id="schKey" aria-label="Scheme">${S.list.map((x) => `<option value="${esc(x.key)}"${x.key === s.key ? ' selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
       <div class="p-muted small sch-about">${esc(s.about)}</div>
       <div class="sch-params">${s.params.map(paramInput).join('')}
-        <label title="Fee charged at every entry and exit, basis points of what is traded">Fee bps <input type="number" id="schFee" value="${esc(cfg.fee)}" min="0" max="1000" step="0.5"></label>
-        <label title="Slippage charged at every entry and exit, basis points">Slippage bps <input type="number" id="schSlip" value="${esc(cfg.slippage)}" min="0" max="1000" step="0.5"></label>
-        <label title="Short decisions only close a long"><input type="checkbox" id="schLong"${cfg.longOnly ? ' checked' : ''}> long only</label>
+        <label title="${FEE}">Fee bps <input type="number" id="schFee" value="${esc(cfg.fee)}" min="0" max="1000" step="0.5" ${kb('decimal', 'go')}>${why(FEE)}</label>
+        <label title="${SLIP}">Slippage bps <input type="number" id="schSlip" value="${esc(cfg.slippage)}" min="0" max="1000" step="0.5" ${kb('decimal', 'go')}>${why(SLIP)}</label>
+        <label title="${LONG}"><input type="checkbox" id="schLong"${cfg.longOnly ? ' checked' : ''}> long only${why(LONG)}</label>
       </div>
       <div class="p-muted small">Over ${esc(range?.over || '–')}${range ? `: ${when(range.from)} → ${when(range.to)}` : ''} · ${esc(state.period ? `${state.period.span} ${state.period.type}` : '')} bars · backtest, not orders</div>
       ${S.error ? `<div class="sch-error">${esc(S.error)}</div>` : ''}
@@ -344,35 +373,89 @@
           <td>${when(t.entryTime)}</td><td class="num">${priceText(t.entry)}</td>
           <td>${t.shownExit ? when(t.exitTime) : '<i>open</i>'}</td><td class="num">${t.shownExit ? priceText(t.exit) : '–'}</td>
           <td class="num ${t.shownExit ? cls(t.ret) : ''}">${t.shownExit ? fmtPct(t.ret) : '–'}</td>
-          <td class="small">${t.shownExit ? esc(t.why) : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+          <td class="small">${t.shownExit ? esc(t.why) : ''}${why(t.openedBy ? `opened: ${t.openedBy}` : '')}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
   }
   S.render = render;
 
   $('sidePanel').addEventListener('click', (e) => {
-    if (e.target.id === 'schRun') run();
-    else if (e.target.id === 'schClear') clear();
+    // an explanation under a setting (the ⓘ's) is read, not pressed: its label neither focuses the field (a keyboard
+    // coming up) nor ticks the box
+    if (e.target.closest('#pSchemes label .sch-why')) { e.preventDefault(); return; }
+    if (e.target.id === 'schRun') {
+      // a field still typed in (a tap on a button leaves the focus where it was on some phones) is left first: its
+      // number committed ('change'), and the run's figures drawn at once
+      const f = document.activeElement;
+      if (f && f.matches?.('#pSchemes input[type="number"]')) f.blur();
+      run();
+    } else if (e.target.id === 'schClear') clear();
+    else if (e.target.id === 'schInfo') {  // the explanations shown or put away, the fields left as they are
+      explained = !explained;
+      $('pSchemes').classList.toggle('sch-explained', explained);
+      e.target.setAttribute('aria-pressed', String(explained));
+    }
     const row = e.target.closest('#pSchemes tr[data-time]');
     if (row) chart.scrollToTimestamp(Number(row.dataset.time), 200);
   });
-  $('sidePanel').addEventListener('change', (e) => {
-    const t = e.target;
-    if (!t.closest('#pSchemes')) return;
+  // A setting into the scheme's settings: on 'change', and from Enter before the run it asks for.
+  function commit(t) {
     if (t.id === 'schKey') { cfg.key = t.value; cfg.params = {}; }
     else if (t.dataset.param) cfg.params[t.dataset.param] = t.type === 'number' ? Number(t.value) : t.value;
     else if (t.id === 'schFee') cfg.fee = Number(t.value) || 0;
     else if (t.id === 'schSlip') cfg.slippage = Number(t.value) || 0;
     else if (t.id === 'schLong') cfg.longOnly = t.checked;
+  }
+  $('sidePanel').addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t.closest('#pSchemes')) return;
+    commit(t);
     save();
     if (t.id === 'schKey') render();
   });
+  // Enter runs the scheme with the number as typed: its 'change' comes after the key, so the run had the one before
+  // (a phone's Go key is this Enter). The field is left first, so the run's figures are drawn at once (a redraw waits
+  // while a field is typed in) and a phone's keyboard goes away; a redraw took the field away before, as now.
   $('sidePanel').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.closest?.('#pSchemes')) run();
+    if (e.key !== 'Enter' || e.isComposing || !e.target.closest?.('#pSchemes')) return;
+    const t = e.target;
+    if (!t.matches('input, select')) return;  // a button's Enter is its own click: Run runs, Clear clears, ⓘ explains
+    if (t.matches('input[type="number"]')) {
+      commit(t);
+      save();
+      t.blur();
+    }
+    run();
   });
 
   S.run = run;
   S.clear = clear;
+  // A select a finger opened stays as it is while it is open (a phone's or a tablet's picker, slower to use than a
+  // mouse's list; the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface"): a redraw
+  // from elsewhere meanwhile (the view scrolled, a replay's bar closed) waits until the select is left, so the choice
+  // is never made on a select drawn away. A run's figures, and what the panel's own buttons and its scheme's picker ask,
+  // are drawn at once; a mouse's and a keyboard's selects are as before.
+  $('sidePanel').addEventListener('focusin', (e) => {
+    const t = e.target;
+    picker = t instanceof HTMLSelectElement && t.closest('#pSchemes') && window.LiminalTouch
+      && ['touch', 'pen'].includes(window.LiminalTouch.lastInput) ? t : null;
+  });
+  $('sidePanel').addEventListener('focusout', (e) => {
+    if (e.target !== picker) return;
+    setTimeout(() => {  // once the focus has gone where it goes
+      if (document.activeElement === picker) return;
+      picker = null;
+      if (pickerHeld) render();
+    }, 0);
+  });
+  const pickerOpen = () => !!picker && picker.isConnected && document.activeElement === picker;
   let renderFrame = 0;
-  const schedule = () => { if (!renderFrame) renderFrame = requestAnimationFrame(() => { renderFrame = 0; render(); }); };
+  const schedule = () => {
+    if (renderFrame) return;
+    renderFrame = requestAnimationFrame(() => {
+      renderFrame = 0;
+      if (pickerOpen()) pickerHeld = true;  // drawn once the select is left
+      else render();
+    });
+  };
   S.reveal = (shownTo, formingAt) => {  // the replay's clock moved: drawn on the next frame, once
     const closed = shownTo !== S.shownTo;
     S.shownTo = shownTo; S.formingAt = formingAt;

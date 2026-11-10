@@ -28,7 +28,11 @@
   const hint = document.createElement('div');
   hint.className = 'replay-hint';
   hint.hidden = true;
-  hint.textContent = 'Replay: click the bar to start from · Esc to cancel';
+  // worded for what pressed Replay: a mouse or a keyboard, or a finger (or a pen), which has no Esc
+  const HINTS = { mouse: 'Replay: click the bar to start from · Esc to cancel',
+                  finger: 'Replay: tap the bar to start from · tap Replay again to cancel' };
+  const fingered = () => !!window.LiminalTouch && ['touch', 'pen'].includes(window.LiminalTouch.lastInput);
+  hint.textContent = HINTS.mouse;
   $('chart').append(hint);
 
   // The controls are built again only when one of them changes (playing, speed, the finer bars, the
@@ -45,14 +49,17 @@
     const shape = [r.playing, r.speed, r.fine?.label, r.done].join('|');
     if (shape !== built) {
       built = shape;
+      // each sign's meaning: its title for a mouse, its name for a screen reader, and on a touch screen a word under it
+      const word = (w) => `<span class="rp-word touch-only">${w}</span>`;
+      const fine = `One ${esc(r.fine?.label || 'finer bar')} on`;
       bar.innerHTML = `
-        <button data-act="restart" title="Back to the start point">⏮</button>
-        <button data-act="play" class="primary" title="${r.playing ? 'Pause (space)' : 'Play (space)'}">${r.playing ? '❚❚' : '▶'}</button>
-        <button data-act="fine" title="One ${esc(r.fine?.label || 'finer bar')} on">›</button>
-        <button data-act="bar" title="To the close of the forming bar">»</button>
-        <span class="replay-speeds">${SPEEDS.map((s) => `<button data-speed="${s}" class="${s === r.speed ? 'on' : ''}">${s}×</button>`).join('')}</span>
+        <button data-act="restart" title="Back to the start point" aria-label="Back to the start point">⏮${word('Start')}</button>
+        <button data-act="play" class="primary" title="${r.playing ? 'Pause (space)' : 'Play (space)'}" aria-label="${r.playing ? 'Pause' : 'Play'}">${r.playing ? '❚❚' : '▶'}${word(r.playing ? 'Pause' : 'Play')}</button>
+        <button data-act="fine" title="${fine}" aria-label="${fine}">›${word('Step')}</button>
+        <button data-act="bar" title="To the close of the forming bar" aria-label="To the close of the forming bar">»${word('Bar end')}</button>
+        <span class="replay-speeds" role="group" aria-label="Speed">${SPEEDS.map((s) => `<button data-speed="${s}" class="${s === r.speed ? 'on' : ''}" aria-pressed="${s === r.speed}">${s}×</button>`).join('')}</span>
         <span class="replay-clock" title="The replay's time${r.fine ? `, built from ${esc(r.fine.label)} bars` : ''}"></span>
-        <button data-act="stop" title="Leave the replay: back to the chart as it is now">✕</button>`;
+        <button data-act="stop" title="Leave the replay: back to the chart as it is now" aria-label="Leave the replay">✕${word('Leave')}</button>`;
     }
     renderClock();
   }
@@ -84,6 +91,7 @@
       return;
     }
     picking = !picking;
+    if (picking) hint.textContent = fingered() ? HINTS.finger : HINTS.mouse;
     hint.hidden = !picking;
     $('chart').classList.toggle('picking', picking);
     renderBar();
@@ -98,8 +106,14 @@
     return data[i]?.timestamp ?? null;
   }
 
-  $('chart').addEventListener('click', (e) => {
-    if (!picking || e.target.closest('#replayBar')) return;
+  // The controls laid over the chart (the replay's own bar, the time zone and the sessions with their menus, the newest
+  // bar's », the panes' grips, the now handle, a drawing's bar, menu and hint): a press or a click there is theirs,
+  // never the pick of the bar beneath it.
+  const OVER_CHART = '#replayBar, button, a, input, select, .axis-menu, .pane-grip, .now-handle, .draw-bar, .draw-menu, .draw-hint';
+  const onControl = (e) => e.target instanceof Element && !!e.target.closest(OVER_CHART);
+
+  // The bar picked (a click, or a finger's tap): the replay starts from it. One pick starts one replay: picking ends.
+  function pickAt(e) {
     const ts = barAt(e);
     if (ts == null) return;
     picking = false;
@@ -107,7 +121,28 @@
     $('chart').classList.remove('picking');
     if (playable()) begin(ts);  // the type or model may have changed while picking
     else renderBar();
+  }
+  $('chart').addEventListener('click', (e) => {
+    if (!picking || onControl(e)) return;
+    pickAt(e);
   }, true);
+  // A finger's tap (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface"): the
+  // chart library takes a tap on its canvas for itself and cancels the touch's end, so no click follows it. A finger
+  // (or a pen) let go near where it went down, and soon, is the tap; one held longer is the library's crosshair, one
+  // moved its pan. A mouse picks by its click, as before.
+  let press = null;  // {id, x, y, at}: a finger down on the chart while picking
+  $('chart').addEventListener('pointerdown', (e) => {
+    press = picking && e.pointerType !== 'mouse' && e.isPrimary && !onControl(e)
+      ? { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now() } : null;
+  }, true);
+  $('chart').addEventListener('pointerup', (e) => {
+    const p = press;
+    press = null;
+    if (!p || p.id !== e.pointerId || !picking) return;
+    if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10 || performance.now() - p.at > 600) return;
+    pickAt(e);
+  }, true);
+  $('chart').addEventListener('pointercancel', () => { press = null; }, true);
   window.addEventListener('keydown', (e) => {
     if (e.target.closest?.('input, select, textarea')) return;
     if (e.key === 'Escape' && picking) { picking = false; hint.hidden = true; $('chart').classList.remove('picking'); renderBar(); }

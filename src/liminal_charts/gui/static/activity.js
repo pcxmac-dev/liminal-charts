@@ -21,6 +21,12 @@
   const num = (n) => (n == null ? '–' : Number(n).toLocaleString());
   // a feed as the page names it: alpaca (blue ocean), tiingo (forex) (app.js feedLabel)
   const label = (source) => (typeof feedLabel === 'function' ? feedLabel(source) : source);
+  // The views' redraws (panels.js Views, loaded after this file: until then drawn at once, as before): each part only
+  // when it changed, and none under a finger or while a finger's scroll moves (the user, 2026-11-10: "I want to support
+  // touch as well as mouse clicking on the interface"): the Live view and the queue are drawn again every 1.5 to 3 s.
+  const redraw = (root, fn) => (window.Views?.redraw ? window.Views.redraw(root, fn) : fn());
+  const patch = (node, html, again) => { if (window.Views?.patch) window.Views.patch(node, html, again); else node.innerHTML = html; };
+  const fingered = () => ['touch', 'pen'].includes(window.LiminalTouch?.lastInput);
 
   let data = null;
   let timer = null;
@@ -31,6 +37,7 @@
   let openTicker = null;  // the symbol open on the chart (sent with each poll for the live recorder)
   let pollFailed = false;  // the last poll got no answer
   let failedPolls = 0;  // in a row
+  let netDrawn = '';  // the status bar's message as drawn
 
   function dur(s) {
     if (s == null) return '–';
@@ -292,7 +299,18 @@
       busy = true;
       cls = '';
     }
-    text.innerHTML = msg ? `${busy ? '<span class="net-spin"></span>' : ''}${msg}` : '';
+    // drawn again only when it changed, and not under a finger (its tap shows the words: below); on a touch screen an
+    // ⓘ at its start says there is more to read than the line: why a fetch failed or nothing can be fetched (its
+    // tooltip's words), or the line itself cut short on a narrow screen (an ⓘ at its end went with what was cut)
+    const html = msg ? `<span class="net-more touch-only" aria-hidden="true"${title ? '' : ' hidden'}>ⓘ</span>${busy ? '<span class="net-spin"></span>' : ''}${msg}` : '';
+    redraw(text, () => {
+      if (netDrawn !== html) { text.innerHTML = html; netDrawn = html; }
+      const more = text.querySelector('.net-more');
+      if (more && !title && window.LiminalTouch?.touch) {  // shown while the line does not fit (measured without it)
+        more.hidden = true;
+        more.hidden = !(text.scrollWidth > text.clientWidth + 1);
+      }
+    });
     text.className = cls;
     bar.hidden = progress == null && !busy;
     bar.classList.toggle('indeterminate', progress == null && busy);
@@ -307,6 +325,17 @@
     const left = Math.max(0, Math.round(w.until - Date.now() / 1000));
     return left ? ` · waiting ${left} s (${esc(w.reason)})` : '';
   }
+
+  // The status bar's message whole for a finger: a tap on it shows its words and why (its tooltip's) in a bubble, for
+  // a long line is cut short on a narrow screen and the reason a fetch failed is a tooltip no finger can hover (the
+  // user, 2026-11-10). A mouse's click does nothing new: its hover shows the tooltip as before.
+  el('netText').addEventListener('click', () => {
+    if (!fingered() || !window.LiminalTouch?.tip) return;
+    const t = el('netText');
+    const line = [...t.childNodes].filter((n) => !n.classList?.contains('net-more')).map((n) => n.textContent).join('').trim();
+    const words = [line, t.title].filter(Boolean).join('\n');
+    if (words) window.LiminalTouch.tip(t, words);
+  });
 
   window.addEventListener('liminal:symbol', (e) => { openTicker = e.detail; checkSymbol(e.detail); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });  // back in view: asked at once
@@ -328,6 +357,9 @@
     } catch (err) { showError(err); }
   });
   el('netHalt').addEventListener('click', async () => {
+    // a finger's tap asks first: Halt stops every fetch at once and sits a finger's width from Pause (a mouse's click,
+    // and the keyboard's, halt as they did)
+    if (fingered() && !window.confirm("Halt all fetching until you resume it? The open symbol's fetches stop too; the live streams go on.")) return;
     try {
       await apiWrite('POST', '/api/fetching', { paused: true, halt: true });
       await poll();
@@ -377,13 +409,14 @@
     el('qCounts').textContent = total ? Q_STATES.filter((st) => t[st]).map((st) => `${num(t[st])} ${Q_LABEL[st]}`).join(' · ') : '';
     const chips = (key, items) => items.map(([v, text, n]) => `<button type="button" data-q="${key}" data-v="${esc(v)}"
       class="${qFilter[key] === v ? 'active' : ''}">${text}${n != null ? ` <span class="chip">${num(n)}</span>` : ''}</button>`).join('');
-    el('qFilters').innerHTML = `<div class="q-group">${chips('plugin', [['', 'Every plugin', null],
+    const filters = `<div class="q-group">${chips('plugin', [['', 'Every plugin', null],
         ...queue.plugins.map((p) => [p.name, esc(p.title), sum(queue.counts.plugins[p.name])])])}</div>
       <div class="q-group">${chips('kind', [['', 'Every kind', null], ...queue.kinds.map((k) => [k, esc(k), sum(queue.counts.kinds[k])])])}</div>
       <div class="q-group">${chips('state', [['', 'Every state', null], ...Q_STATES.filter((st) => t[st] || st === qFilter.state)
         .map((st) => [st, `<span class="st-dot ${Q_DOT[st]}"></span>${Q_LABEL[st]}`, t[st] || 0])])}</div>`;
+    redraw(el('qFilters'), () => patch(el('qFilters'), filters, renderQueue));
     const rows = queue.rows;
-    el('qRows').innerHTML = rows.length ? rows.map((r) => {
+    const body = rows.length ? rows.map((r) => {
       const sym = r.kind === 'bars';
       const name = sym ? `<span class="sym-cell">${symbolIcon({ ticker: r.ticker, asset: r.asset }, 20)}<span><b>${esc(r.title)}</b>
           <div class="sub">${esc(r.asset || 'bars')}</div></span></span>` : `<b>${esc(r.title)}</b><div class="sub">${esc(r.kind)}</div>`;
@@ -398,6 +431,7 @@
     }).join('') + (rows.length >= queue.limit ? `<tr><td colspan="7" class="empty">The first ${num(rows.length)} shown: what is being
         fetched, then what waits (in its order), held, failed and the newest done. Filter by plugin, kind or state for the rest.</td></tr>` : '')
       : `<tr><td colspan="7" class="empty">${total ? 'Nothing in this filter.' : 'Nothing on the queue yet: the next run of each plugin puts what it will fetch here.'}</td></tr>`;
+    redraw(el('qRows'), () => patch(el('qRows'), body, renderQueue));  // a row that did not change stays: a tap on it opens it
   }
 
   // How much of a symbol this plugin has downloaded (the user, 2026-11-02): its share of the history
@@ -410,12 +444,20 @@
     const pct = Math.round((p.share || 0) * 100);
     const spans = Object.entries(p.stored || {}).map(([res, [a, b]]) => `${RES_LABEL[res] || res} ${shortDay(a)}→${shortDay(b)}`);
     const note = p.retiredOn ? ` · retired ${shortDay(p.retiredOn)}` : '';
+    // how far back it is to hold, in words on a touch screen too (the bar's tooltip is a mouse's)
     return `<div class="q-bar" title="${pct}% of the history this plugin is to hold, back to ${esc(p.target || '')}"><span style="width:${pct}%"></span></div>
-      <div class="sub">${pct}%${spans.length ? ' · ' + esc(spans.join(' · ')) : ' · nothing stored here'}${esc(note)}</div>`;
+      <div class="sub">${pct}%${spans.length ? ' · ' + esc(spans.join(' · ')) : ' · nothing stored here'}${esc(note)}${
+        p.target ? `<span class="touch-only"> · back to ${esc(p.target)}</span>` : ''}</div>`;
   }
 
+  // The Fetcher icon's words on a touch screen, which its count carries on the rail (a tooltip no finger can hover):
+  // the symbols that should have new data (the user, 2026-11-10: a rail icon's name where it carries state becomes
+  // visible text on touch screens)
+  const railWords = () => (!data?.running && data?.newData
+    ? `<span class="p-muted touch-only">· ${num(data.newData)} symbol${data.newData === 1 ? '' : 's'} should have new data: Scan for new data fetches them</span>` : '');
+
   function renderFetcherView() {
-    el('actStatus').innerHTML = statusLine();
+    el('actStatus').innerHTML = statusLine() + railWords();
     if (data) el('scanBtn').disabled = !!data.running;
     el('scanNote').innerHTML = scanNote ? esc(scanNote) : '';
     loadRequests();
@@ -469,7 +511,7 @@
         + `${st.clients?.length ? `; ${num(st.clients.length)} client${st.clients.length === 1 ? '' : 's'} attached` : ''}${plugins}.`
       : 'No fetcher has run on this database yet.';
     const rows = requests.rows || [];
-    el('rqRows').innerHTML = rows.length ? rows.map((r) => `<tr>
+    const body = rows.length ? rows.map((r) => `<tr>
         <td><span class="sym-cell">${symbolIcon({ ticker: r.symbol, asset: r.plan?.asset, icon: symbolInfo(r.symbol).icon }, 20)}<span><b>${esc(r.symbol)}</b>
           <div class="sub">${esc((r.kinds || []).join(', '))}</div></span></span></td>
         <td>${esc(r.by)}</td>
@@ -479,6 +521,7 @@
         <td class="sub">${esc(r.detail || '')}</td>
         <td>${rqWhen(r)}</td></tr>`).join('')
       : '<tr><td colspan="6" class="empty">No requests yet: a symbol opened in the chart, or asked for here, goes on the stack.</td></tr>';
+    redraw(el('rqRows'), () => patch(el('rqRows'), body, renderRequests));  // its cancel buttons not replaced under a finger
   }
 
   async function submitRequest(e) {
@@ -504,7 +547,7 @@
     try { await fetch(`/api/requests/${encodeURIComponent(id)}`, { method: 'DELETE', headers: WRITE_HEADERS }); } catch { /* the next poll shows it */ }
     loadRequests(true);
   }
-  el('rqForm').addEventListener('submit', submitRequest);
+  el('rqForm').addEventListener('submit', submitRequest);  // its symbol box's keyboard is a ticker's (index.html)
   el('rqRows').addEventListener('click', (e) => {
     const b = e.target.closest('[data-cancel]');
     if (b) cancelRequest(b.dataset.cancel);
@@ -530,7 +573,9 @@
     const badge = (f) => f.realtime ? '<span class="state fresh">real time</span>'
       : f.available ? `<span class="state backfilling">${esc(f.delay)}</span>` : '<span class="state">end of day only</span>';
     const names = { stock: 'Stocks', index: 'Indices', fx: 'Forex', future: 'Futures', abroad: 'Stocks abroad' };
-    box.innerHTML = `
+    // drawn again every 1.5 s while shown: each part only when it changed (a wide table keeps its sideways scroll, a row
+    // its tap), and none under a finger or while a finger's scroll moves
+    const html = `
       <div class="view-head"><div><h2>Live feeds</h2>
         <div class="p-muted small">The current session, as it happens. The fetcher handles everything before it.</div></div>
         ${window.LiveIcon ? `<div class="live-effect" role="group" aria-label="Rail icon effect while the open symbol streams">
@@ -541,7 +586,8 @@
         <b>${live.recording ? 'Recording' : 'Not recording'}</b>
         <span class="p-muted">${live.recording ? 'current-session data is captured as it arrives'
           : live.available ? 'delayed intraday data is available on your plan; nothing records it live yet, so it arrives with the fetcher\'s runs'
-            : 'your plan has no current-session feed'}</span></div>
+            : 'your plan has no current-session feed'}</span>${(live.liveTickers || []).length
+          ? `<span class="touch-only">· streaming now: <b>${esc(live.liveTickers.join(', '))}</b></span>` : ''}</div>
       <div class="table-wrap"><table class="act-table">
         <thead><tr><th>Feed</th><th>Symbols</th><th>Latency on your plan</th><th>Recording</th></tr></thead>
         <tbody>${live.feeds.map((f) => `
@@ -563,6 +609,7 @@
         </tbody></table></div>
       <h4>News</h4>
       <div id="liveNews" class="news-list">${liveNewsHtml()}</div>`;
+    redraw(box, () => patch(box, html, renderLiveView));
     loadLiveNews();
   }
 

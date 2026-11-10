@@ -8,6 +8,8 @@
   const esc = window.LiminalIcons.esc;
   const safeUrl = window.LiminalIcons.safeUrl;
   let items = [], fetchedAt = 0, filter = 'all', query = '';
+  // the keyboard a field calls up on a phone or a tablet (the library's touch.js)
+  const kb = (kind, more) => window.LiminalTouch?.keyboard(kind, more) || '';
 
   async function load(force = false) {
     if (!force && Date.now() - fetchedAt < 60000) return render();
@@ -33,11 +35,15 @@
       && (!q || [it.text, it.source, it.exchange, ...(it.tickers || [])].some((v) => v && v.toLowerCase().includes(q))));
     const counts = { all: items.length, event: items.filter((i) => i.kind === 'event').length,
                      news: items.filter((i) => i.kind === 'news').length, watched: items.filter((i) => i.watched?.length).length };
-    box.innerHTML = `
+    // The head is drawn alike every time, so its filter box is never replaced (the user, 2026-11-10: "Support for
+    // virtual keyboard on tablets and phones"): typed in, it keeps its word, its caret and an on-screen keyboard's word
+    // being composed; only the filters and the list are drawn again, as it is typed and every minute, each part only
+    // when it changed and none under a finger (panels.js Views).
+    window.Views.redraw(box, () => draw(`
       <div class="view-head"><div><h2>News</h2>
         <div class="p-muted small">Everything the globe's ticker flashes: exchange events from each exchange's calendar,
           and headlines (the fetcher checks at most every 30 minutes, 1 request).</div></div>
-        <div class="view-actions"><input id="newsSearch" type="search" placeholder="Filter" value="${esc(query)}"></div></div>
+        <div class="view-actions"><input id="newsSearch" type="search" placeholder="Filter" aria-label="Filter the news" ${kb('search')}></div></div>
       <div class="filters">${[['all', 'All'], ['event', 'Exchange events'], ['news', 'Headlines'], ['watched', 'Your symbols']]
         .map(([k, l]) => `<button data-nf="${k}" class="${k === filter ? 'active' : ''}">${l} <span class="chip">${counts[k]}</span></button>`).join('')}</div>
       <div class="news-list">${rows.length ? rows.map((it) => `
@@ -51,18 +57,23 @@
               ${(it.tickers || []).map((t) => watched.has(t)
                 ? ` <a href="#" class="tk" data-ticker="${esc(t)}" title="Open the chart">${esc(t)}</a>` : ` <span class="tk">${esc(t)}</span>`).join('')}</div>
           </div>
-        </div>`).join('') : '<div class="empty">Nothing yet. Headlines arrive with the fetcher\'s next run.</div>'}</div>`;
-    const input = document.getElementById('newsSearch');
-    input.addEventListener('input', (e) => {
-      // drawn again as typed: the new box gets the caret (or selection) where it was, not at the start
-      const { selectionStart: from, selectionEnd: to } = e.target;
-      query = e.target.value;
-      render();
-      const box = document.getElementById('newsSearch');
-      box.focus();
-      box.setSelectionRange(from, to);
-    });
+        </div>`).join('') : '<div class="empty">Nothing yet. Headlines arrive with the fetcher\'s next run.</div>'}</div>`));
   }
+
+  function draw(html) {
+    window.Views.patch(box, html, render);
+    const input = document.getElementById('newsSearch');  // drawn new (the view's first time): what was typed before
+    if (input && document.activeElement !== input && input.value !== query) input.value = query;
+  }
+
+  box.addEventListener('input', (e) => {  // the filter as typed: the list drawn again, the box left as it is
+    if (e.target.id !== 'newsSearch') return;
+    query = e.target.value;
+    render();
+  });
+  box.addEventListener('keydown', (e) => {  // an on-screen keyboard's Search: put away, so the list it found shows
+    if (e.key === 'Enter' && e.target.id === 'newsSearch' && window.Views.softKeyboard()) e.target.blur();
+  });
 
   box.addEventListener('click', (e) => {
     const f = e.target.closest('[data-nf]');

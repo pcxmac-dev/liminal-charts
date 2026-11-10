@@ -70,6 +70,25 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+// -- touch screens and the on-screen keyboard (the library's touch.js, loaded right after theme.js; the user,
+// 2026-11-10: "I want to support touch as well as mouse clicking on the interface ... We'll make sure it works across
+// all apps"; "Support for virtual keyboard on tablets and phones") ------------------------------------------------------
+// touchUi: the device has a touch screen (its targets finger-sized); fingered: the user's last move was a finger's or a
+// pen's (a mouse's and a keyboard's do as they did); narrow: a phone's width, where the side panel lies over the chart.
+const touchUi = () => !!window.LiminalTouch?.touch;
+const fingered = () => ['touch', 'pen'].includes(window.LiminalTouch?.lastInput);
+const NARROW = window.matchMedia ? window.matchMedia('(max-width: 700px)') : null;
+const narrow = () => !!NARROW?.matches;
+// The side panel hidden by a phone's layout, not by you (setPanelHidden): panelByPhone while openSymbol closes it over
+// the chart; panelForced while it is so hidden (not kept: a wider window shows it again as you left it).
+let panelByPhone = false, panelForced = false;
+// The words an element's tooltip holds, in the bubble, for a finger's tap (a mouse hovers them): the chips and tags
+// that explain themselves only so.
+function tipOnTap(el) {
+  if (!el || !fingered() || !window.LiminalTouch) return false;
+  return window.LiminalTouch.tip(el);
+}
+
 // Sanity check for every request the page reads with: the same request is never sent again while
 // one is on its way (callers share its answer), and an endpoint that keeps failing (no answer, or
 // the server busy or broken) is not asked again until a pause has passed: 2 s, doubling up to
@@ -320,6 +339,33 @@ function anchorMarks(coordinates, color = ANCHOR.color) {
   return { type: 'line', ignoreEvent: true, attrs: arms, styles: { style: 'solid', color, size: ANCHOR.size } };
 }
 
+// A finger's reach on a drawing (the user, 2026-11-10: drawings easier to hit by finger): a fingertip is about 40 px
+// across, and the library hits a line within 2 px of it and an anchor within its 5 px. While the pointer is a finger or
+// a pen, a drawing's lines are hit within FINGER_LINE px (the 'reach' figure below, through the library's own
+// registerFigure: it draws nothing) and its anchors' dots, still unseen, are FINGER_ANCHOR px round (anchorReach). A
+// mouse keeps the library's own sizes. The reach selects a drawing by a tap but drags only the drawing selected
+// (REACH_NO_DRAG): a finger's pan begun beside a line is the chart's, as it was, and never moves (and saves) the line.
+const FINGER_LINE = 14;
+const FINGER_ANCHOR = 16;
+const REACH_NO_DRAG = ['onPressedMoveStart', 'onPressedMoving', 'onPressedMoveEnd'];
+
+// Whether the point p lies within `reach` px of the polyline through `coordinates`.
+function nearLine(p, coordinates, reach) {
+  for (let i = 1; i < coordinates.length; i++) {
+    const a = coordinates[i - 1], b = coordinates[i];
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+    const ex = a.x + t * dx - p.x, ey = a.y + t * dy - p.y;
+    if (ex * ex + ey * ey <= reach * reach) return true;
+  }
+  return false;
+}
+kc.registerFigure({
+  name: 'reach',
+  checkEventOn: (p, attrs) => fingered() && [].concat(attrs).some((a) => nearLine(p, a?.coordinates || [], FINGER_LINE)),
+  draw: () => {},
+});
+
 // The highlight's corners, the earlier first: its start and its end, whichever was placed first.
 function timeOrdered(points) {
   return [...points].sort((p, q) => p.timestamp - q.timestamp);
@@ -499,6 +545,28 @@ const chart = kc.init('chart', {
   timezone: TZ, styles: themeBase(), locale: 'en-US',
   layout: { barSpaceLimit: { min: MIN_BAR_SPACE, max: 80 } },
 });
+// The chart's own gestures (a finger pans, pinches and holds for the crosshair: the library's): no tooltip bubble of
+// touch.js starts on it (data-touch-own). The switches and the handle over it are the page's and keep theirs.
+chart.getDom()?.setAttribute('data-touch-own', '');
+// The library's own anchor dots, the mouse's (a finger's are FINGER_ANCHOR px: anchorReach)
+const LIB_POINT = (() => {
+  const p = chart.getStyles()?.overlay?.point || {};
+  return { radius: p.radius ?? 5, activeRadius: p.activeRadius ?? 5 };
+})();
+let anchorFinger = false;  // the pointer on the chart is a finger or a pen
+function anchorReach() {
+  return { overlay: { point: anchorFinger ? { radius: FINGER_ANCHOR, activeRadius: FINGER_ANCHOR } : { ...LIB_POINT } } };
+}
+// Set as the pointer goes down (a finger) or moves (a mouse), before the library hits anything with it: the dots are
+// tested as last drawn, and a drawing's anchors are drawn once a tap has selected it.
+for (const type of ['pointerdown', 'pointermove']) {
+  $('chart').addEventListener(type, (e) => {
+    const finger = e.pointerType === 'touch' || e.pointerType === 'pen';
+    if (finger === anchorFinger || (type === 'pointermove' && finger)) return;
+    anchorFinger = finger;
+    chart.setStyles(anchorReach());
+  }, { capture: true, passive: true });
+}
 // The price pane's top left names the symbol and its interval only: the user, 2026-10-31: "on the main
 // plot get rid of the open/hi/low/time/vol info on the top left, keep the box info on the top right"
 // (the bar under the cursor, with its change, range and VWAP, is in that box).
@@ -784,6 +852,7 @@ const nowHandle = document.createElement('div');
 nowHandle.id = 'nowHandle';
 nowHandle.className = 'now-handle';
 nowHandle.title = 'The current time, at the newest bar: drag to place it on screen; double-click to put it back at the right edge';
+nowHandle.dataset.tip = 'The current time, at the newest bar: drag to place it on screen; double-tap to put it back at the right edge';
 // The clock in the zone picked under the price axis, as the crosshair and the axis within a day read
 // it, with the zone's name (EDT, PST, GMT+9 ...). It was New York's whatever the pick.
 const nowClocks = new Map();  // zone -> its clock's format
@@ -817,12 +886,18 @@ function placeNowHandle() {
   nowHandle.classList.toggle('live', isLive());
 }
 
+// A finger's double tap on the handle puts it back as a double-click does (a touch screen's double tap does not make a
+// dblclick everywhere): two taps without a drag within DOUBLE_TAP_MS.
+const DOUBLE_TAP_MS = 350;
+let nowTapAt = 0;
 nowHandle.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   nowHandle.setPointerCapture(e.pointerId);
   chart.scrollToRealTime(0);
   const box = $('chart').getBoundingClientRect();
+  let dragged = 0;  // px the pointer went sideways
   const move = (ev) => {
+    dragged = Math.max(dragged, Math.abs(ev.clientX - e.clientX));
     const w = plotWidth();
     const x = Math.min(w - 8, Math.max(w * 0.1, ev.clientX - box.left));
     state.nowAt = x / w;
@@ -832,21 +907,25 @@ nowHandle.addEventListener('pointerdown', (e) => {
   // The drag ends however the pointer goes: let go, taken by the browser (a touch turned into a
   // scroll) or its capture lost. Ended on pointerup alone, a cancelled drag kept its listeners.
   const ENDS = ['pointerup', 'pointercancel', 'lostpointercapture'];
-  const up = () => {
+  const up = (end) => {
     nowHandle.removeEventListener('pointermove', move);
     for (const ev of ENDS) nowHandle.removeEventListener(ev, up);
     prefs.set('nowAt', state.nowAt);
+    if (e.pointerType === 'mouse' || end?.type !== 'pointerup' || dragged >= 8) return;
+    const t = performance.now();
+    if (t - nowTapAt < DOUBLE_TAP_MS) { nowTapAt = 0; resetNowPosition(); } else nowTapAt = t;
   };
   nowHandle.addEventListener('pointermove', move);
   for (const ev of ENDS) nowHandle.addEventListener(ev, up);
 });
-nowHandle.addEventListener('dblclick', () => {
+function resetNowPosition() {
   state.nowAt = null;
   prefs.set('nowAt', null);
   applyNowPosition();
   goLatest();
-});
-chart.subscribeAction('onVisibleRangeChange', () => requestAnimationFrame(() => { placeNowHandle(); placeHighlightMask(); }));
+}
+nowHandle.addEventListener('dblclick', resetNowPosition);
+chart.subscribeAction('onVisibleRangeChange', () => requestAnimationFrame(() => { placeNowHandle(); placeHighlightMask(); placeNewest(); }));
 window.addEventListener('liminal:activity', () => requestAnimationFrame(() => {  // live or not, again
   if (state.nowAt != null && state.nowApplied !== isLive() && atNewest()) applyNowPosition();
   else placeNowHandle();
@@ -1490,6 +1569,17 @@ function renderGpuButton() {
     : `GPU rendering ${state.gpu ? 'on' : 'off'} — ${GPU_INFO.renderer}${GPU_INFO.software ? ' (software, no hardware acceleration)' : ''}`
       + (state.gpu && !GPU_TYPES.has(state.chartType) ? '. This chart type is drawn on the CPU.' : '')
       + (state.gpu && gpuBars?.lost ? '. The GPU context was lost: drawn on the CPU until the browser gives it back.' : '');
+  // On a touch screen the state the tooltip tells is in words in the status line while the GPU is on but the chart is
+  // drawn on the CPU (no finger hovers the setting in Preferences); a tap there shows the whole sentence.
+  const note = gpuNote();
+  const n = $('gpuNote');
+  if (n) { n.textContent = note; n.title = note ? b.title : ''; n.hidden = !note; }
+}
+// The GPU's state in a few words when it is not plainly on or off: '' otherwise
+function gpuNote() {
+  if (!state.gpu || !GPU_INFO.supported) return '';
+  if (gpuBars?.lost) return 'drawn on the CPU: the GPU was lost';
+  return GPU_TYPES.has(state.chartType) ? '' : 'drawn on the CPU: this chart type';
 }
 
 $('gpuBtn').addEventListener('click', () => {
@@ -1498,7 +1588,9 @@ $('gpuBtn').addEventListener('click', () => {
   applyChartType();
   window.dispatchEvent(new CustomEvent('liminal:gpu', { detail: state.gpu }));  // Preferences shows it
 });
-window.gpuState = () => ({ on: !!state.gpu, supported: !!GPU_INFO.supported, title: $('gpuBtn').title });
+$('gpuNote')?.addEventListener('click', (e) => tipOnTap(e.currentTarget));
+// note: the state in a few words when it is not plainly on or off ('' then), for a page that shows it as text
+window.gpuState = () => ({ on: !!state.gpu, supported: !!GPU_INFO.supported, title: $('gpuBtn').title, note: gpuNote() });
 
 // A fixed price-axis width: with "auto" the axis widens for long values (an integral's
 // −46,479.70) and the plot shifts sideways, so switching models would move the time window.
@@ -1541,8 +1633,82 @@ function placeAxisGap() {
   if (!axis) return;
   Object.assign(axisGap.style, { top: `${axis.top}px`, height: `${PANE_GAP}px`, width: `${axis.width}px`, background: gapColor() });
   placeTimezone();  // on the date row below the band
+  placePaneGrips();
 }
 new ResizeObserver(() => requestAnimationFrame(placeAxisGap)).observe($('chart'));  // panes added, dragged, resized
+
+// -- the panes' heights by finger (the user, 2026-11-10: finger-sized grips for the chart's pane separators) -----------
+// The library drags its separators by the mouse alone. On a touch screen each indicator pane has a grip of the page's
+// own, centred on the gap above it: dragged up or down it resizes the two panes as the library does (the one shrinking
+// goes down to its least height, the other takes what it gives up; the price pane takes whatever is left), through the
+// library's setPaneOptions. A finger's size: 40 px tall (style.css .pane-grip), its bar 6 px.
+const GRIP = { width: 72, height: 40 };
+const paneGrips = new Map();  // pane id -> its grip
+function chartPanes() {  // the drawn panes, top to bottom, the time axis left out
+  return (chart.getPaneOptions() || []).filter((p) => p && p.id !== 'x_axis_pane')
+    .map((p) => ({ id: p.id, state: p.state, dragEnabled: p.dragEnabled, minHeight: p.minHeight, box: chart.getSize(p.id) }))
+    .filter((p) => p.box && p.box.height > 0).sort((a, b) => a.box.top - b.box.top);
+}
+const adjustable = (p) => !p.state || p.state === 'normal';
+function placePaneGrips() {
+  const panes = touchUi() ? chartPanes() : [];
+  const w = plotWidth();
+  const kept = new Set();
+  panes.forEach((p, i) => {
+    if (i === 0 || !adjustable(p) || p.dragEnabled === false || !panes.slice(0, i).some(adjustable)) return;
+    let grip = paneGrips.get(p.id);
+    if (!grip) { grip = makePaneGrip(p.id); paneGrips.set(p.id, grip); }
+    kept.add(p.id);
+    const left = `${Math.round(Math.max(0, w / 2 - GRIP.width / 2))}px`;
+    const top = `${Math.round(p.box.top - PANE_GAP / 2 - GRIP.height / 2)}px`;  // the gap is above the pane's top
+    if (grip.style.left !== left || grip.style.top !== top) Object.assign(grip.style, { left, top });
+  });
+  for (const [id, grip] of paneGrips) if (!kept.has(id)) { grip.remove(); paneGrips.delete(id); }
+}
+function makePaneGrip(id) {
+  const grip = document.createElement('div');
+  grip.className = 'pane-grip';
+  grip.dataset.tip = 'Drag up or down: the panes\' heights';
+  grip.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const panes = chartPanes();
+    const i = panes.findIndex((p) => p.id === id);
+    let j = i - 1;  // the pane above: the nearest whose height can change
+    while (j >= 0 && !adjustable(panes[j])) j--;
+    if (i < 1 || j < 0) return;
+    e.preventDefault();
+    try { grip.setPointerCapture(e.pointerId); } catch { /* the pointer is gone */ }
+    grip.classList.add('dragging');
+    const above = panes[j], below = panes[i];
+    const start = { y: e.clientY, above: above.box.height, below: below.box.height };
+    let y = e.clientY, frame = 0;
+    const resize = () => {
+      frame = 0;
+      const dy = y - start.y;
+      const shrinking = dy < 0 ? above : below;  // the pane the grip moves into
+      const from = dy < 0 ? start.above : start.below;
+      const gave = from - Math.max(shrinking.minHeight ?? 30, from - Math.abs(dy));
+      const heightBelow = Math.round(dy < 0 ? start.below + gave : start.below - gave);
+      chart.setPaneOptions({ id: below.id, height: heightBelow });
+      // the price pane takes what is left over: an indicator's pane above is set as well
+      if (above.id !== 'candle_pane') chart.setPaneOptions({ id: above.id, height: Math.round(start.above + start.below - heightBelow) });
+      Promise.resolve().then(placePaneGrips);  // once the library has laid the panes out (its own microtask, queued first)
+    };
+    const move = (ev) => { y = ev.clientY; if (!frame) frame = requestAnimationFrame(resize); };
+    const ENDS = ['pointerup', 'pointercancel', 'lostpointercapture'];
+    const end = () => {
+      grip.classList.remove('dragging');
+      grip.removeEventListener('pointermove', move);
+      for (const ev of ENDS) grip.removeEventListener(ev, end);
+    };
+    grip.addEventListener('pointermove', move);
+    for (const ev of ENDS) grip.addEventListener(ev, end);
+  });
+  $('chart').append(grip);
+  return grip;
+}
+chart.subscribeAction('onPaneDrag', () => requestAnimationFrame(placePaneGrips));  // the library's own drag (a mouse)
+window.addEventListener('liminal:indicators', () => requestAnimationFrame(placePaneGrips));  // a pane added or taken off
 
 // The time zone switch, in the corner under the price axis (as TradingView has it): the zone the
 // time axis and crosshair read intraday times in. Its list is a wheel: TZ_ROWS zones in view, the
@@ -1559,6 +1725,25 @@ for (const b of [tzBtn, sessBtn]) b.setAttribute('aria-haspopup', 'listbox');
 $('chart').append(tzBtn, tzMenu, sessBtn, sessMenu);
 let tzTop = 0;  // the zone at the top of the wheel's window (an index into TIMEZONES)
 
+// The newest bar on a touch screen: a » at the right end of the time axis while the chart is not at it (the user,
+// 2026-11-10: on touch screens only, no zoom buttons, two fingers pinch). A keyboard's End does the same.
+const newestBtn = Object.assign(document.createElement('button'), {
+  type: 'button', className: 'newest-btn touch-only', id: 'newestBtn', textContent: '»', hidden: true,
+  title: 'To the newest bar' });
+newestBtn.setAttribute('aria-label', 'To the newest bar');
+newestBtn.addEventListener('click', () => goLatest());
+$('chart').append(newestBtn);
+
+function placeNewest(top = axisButtonTop()) {
+  const w = plotWidth();
+  const show = touchUi() && top != null && w > 0 && chart.getDataList().length > 0 && (!atNewest() || !!state.hasNewer);
+  newestBtn.hidden = !show;
+  if (!show) return;
+  const side = AXIS_BTN_HEIGHT + 4;
+  Object.assign(newestBtn.style, { top: `${top}px`, left: `${Math.max(0, w - side - TZ_INSET / 2)}px`, width: `${side}px`,
+                                   height: `${AXIS_BTN_HEIGHT}px` });
+}
+
 function zoneName(z) {
   return z === 'exchange' ? 'Exchange' : `${zoneCities(z) || z} (${gmtLabel(z)})`;
 }
@@ -1570,7 +1755,13 @@ function zoneName(z) {
 // "this needs to look more like a button but be styled similiarly", "need a session picker button",
 // "on lower left"). Each one's list opens upward from it.
 const TZ_INSET = 8;  // px between the plot's edge and a switch
-const AXIS_BTN_HEIGHT = 20;
+const AXIS_BTN_MOUSE = 20;
+// On a touch screen the switches are a finger's (the user, 2026-11-10: bigger targets whenever the device has a touch
+// screen): AXIS_BTN_TOUCH px tall, in a time axis band of TOUCH_AXIS_SIZE px (applyChartType); their hit area reaches a
+// few px further (style.css).
+const AXIS_BTN_TOUCH = 32;
+const TOUCH_AXIS_SIZE = AXIS_BTN_TOUCH + 14;
+let AXIS_BTN_HEIGHT = AXIS_BTN_MOUSE;
 
 function axisButtonTop() {
   const axis = chart.getSize('x_axis_pane');
@@ -1579,6 +1770,7 @@ function axisButtonTop() {
 }
 
 function placeTimezone() {
+  AXIS_BTN_HEIGHT = touchUi() ? AXIS_BTN_TOUCH : AXIS_BTN_MOUSE;
   const top = axisButtonTop();
   if (top == null) return;
   Object.assign(tzBtn.style, { width: `${Y_AXIS_WIDTH - 2 * TZ_INSET}px`, right: `${TZ_INSET / 2}px`, top: `${top}px`,
@@ -1587,32 +1779,52 @@ function placeTimezone() {
   Object.assign(sessBtn.style, { width: `${Y_AXIS_WIDTH - 2 * TZ_INSET}px`, left: `${TZ_INSET / 2}px`, top: `${top}px`,
                                  bottom: 'auto', height: `${AXIS_BTN_HEIGHT}px` });
   sessMenu.style.bottom = tzMenu.style.bottom;
+  placeNewest(top);
 }
+
+// On a touch screen the list shows the zones that fit above its switch (its rows a finger's height), with an arrow at
+// each end turning it a page, and a finger dragged up or down turns it a zone a row; the mouse wheel's turn stays as it
+// was (the user, 2026-11-10: the time zone menu's touch scrolling and buttons).
+const TZ_TOUCH_ROW = 40;  // px: a row on a touch screen (style.css)
+function tzRows() {
+  if (!touchUi()) return TZ_ROWS;
+  const room = (axisButtonTop() ?? 0) - 12 - 2 * TZ_TOUCH_ROW;  // above the switch, less its two arrows
+  return Math.max(2, Math.min(TZ_ROWS, Math.floor(room / TZ_TOUCH_ROW)));
+}
+const wrapZone = (i) => ((i % TIMEZONES.length) + TIMEZONES.length) % TIMEZONES.length;
 
 function renderTimezone() {
   tzBtn.textContent = zoneShort(pickedZone());  // "PDT" in summer, "PST" in winter: its daylight saving
   tzBtn.title = `Time zone of the time axis and crosshair: ${zoneName(state.timezone)}. Days, weeks and months keep `
     + 'the market\'s own dates. Click to change; the mouse wheel turns the list.';
+  tzBtn.dataset.tip = `Time zone of the time axis and crosshair: ${zoneName(state.timezone)}. Days, weeks and months keep `
+    + 'the market\'s own dates. Tap to change; drag the list up or down, or tap its arrows, for more zones.';
   tzBtn.setAttribute('aria-expanded', String(!tzMenu.hidden));
   placeTimezone();
   if (tzMenu.hidden) return;
   const n = TIMEZONES.length;
   const clock = (z) => new Intl.DateTimeFormat('en-US', { timeZone: z === 'exchange' ? TZ : z, hour: '2-digit',
                                                             minute: '2-digit', hourCycle: 'h23' }).format(new Date());
-  tzMenu.innerHTML = Array.from({ length: TZ_ROWS }, (_, i) => TIMEZONES[(((tzTop + i) % n) + n) % n]).map((z) =>
+  const dst = (z) => z === 'exchange' || keepsDaylightSaving(z);
+  // the arrows at each end: a finger's (no wheel), a page of zones further west or east, round and round
+  const arrow = (step, text, words) => `<button type="button" class="tz-step touch-only" data-tz-step="${step}"`
+    + ` title="${esc(words)}" aria-label="${esc(words)}">${text}</button>`;
+  tzMenu.innerHTML = arrow(-1, '▲ West', 'The zones further west') + Array.from({ length: tzRows() }, (_, i) => TIMEZONES[(((tzTop + i) % n) + n) % n]).map((z) =>
     `<button type="button" data-tz="${esc(z)}" class="${z === state.timezone ? 'on' : ''}"`
     + ` title="${esc(z === 'exchange' ? 'New York, with its daylight saving'
       : `${z}: ${keepsDaylightSaving(z) ? 'with its daylight saving' : 'no daylight saving'}`)}">`
     + `<span class="tz-name">${esc(z === 'exchange' ? 'Exchange' : gmtLabel(z))}</span>`
-    + `<span class="tz-city p-muted">${esc(z === 'exchange' ? 'New York' : zoneCities(z))}</span>`
-    + `<span class="tz-clock p-muted">${esc(clock(z))}</span></button>`).join('');
+    // whether its clock changes in the year, which the tooltip says, in words on a touch screen
+    + `<span class="tz-city p-muted">${esc(z === 'exchange' ? 'New York' : zoneCities(z))}`
+    + `<small class="tz-dst touch-only">${dst(z) ? 'keeps daylight saving' : 'no daylight saving'}</small></span>`
+    + `<span class="tz-clock p-muted">${esc(clock(z))}</span></button>`).join('') + arrow(1, '▼ East', 'The zones further east');
 }
 
 tzBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   closeSessions();
   tzMenu.hidden = !tzMenu.hidden;
-  tzTop = TIMEZONES.indexOf(state.timezone) - Math.floor(TZ_ROWS / 2);  // the zone in use in the middle
+  tzTop = TIMEZONES.indexOf(state.timezone) - Math.floor(tzRows() / 2);  // the zone in use in the middle
   renderTimezone();
 });
 tzMenu.addEventListener('wheel', (e) => {
@@ -1620,7 +1832,44 @@ tzMenu.addEventListener('wheel', (e) => {
   tzTop = ((tzTop + Math.sign(e.deltaY)) % TIMEZONES.length + TIMEZONES.length) % TIMEZONES.length;
   renderTimezone();
 }, { passive: false });
+// A finger (or a pen) dragged up or down the list turns it, a zone a row, as content scrolls under a finger; a tap
+// still picks a zone. The lift after a drag picks nothing (tzSwallow).
+let tzDrag = null, tzSwallow = 0;
+tzMenu.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' || !e.isPrimary) return;
+  const row = tzMenu.querySelector('[data-tz]');
+  tzDrag = { id: e.pointerId, y: e.clientY, top: tzTop, moved: false,
+             row: Math.max(1, row ? row.getBoundingClientRect().height : TZ_TOUCH_ROW) };
+});
+tzMenu.addEventListener('pointermove', (e) => {
+  const d = tzDrag;
+  if (!d || e.pointerId !== d.id) return;
+  const dy = e.clientY - d.y;
+  if (!d.moved && Math.abs(dy) < 8) return;
+  if (!d.moved) {
+    d.moved = true;
+    try { tzMenu.setPointerCapture(e.pointerId); } catch { /* the pointer is gone: its end comes */ }
+  }
+  const top = wrapZone(d.top - Math.round(dy / d.row));
+  if (top !== wrapZone(tzTop)) { tzTop = top; renderTimezone(); }
+});
+const tzDragEnd = (e) => {
+  if (!tzDrag || e.pointerId !== tzDrag.id) return;
+  // a row's capture (a touch's, taken where it went down) handed to the list is no end: only the list's own lost capture
+  if (e.type === 'lostpointercapture' && e.target !== tzMenu) return;
+  if (tzDrag.moved) tzSwallow = performance.now() + 400;
+  tzDrag = null;
+};
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) tzMenu.addEventListener(type, tzDragEnd);
 tzMenu.addEventListener('click', (e) => {
+  if (performance.now() < tzSwallow) return;  // the end of a finger's drag, not a pick
+  const step = e.target.closest('[data-tz-step]');
+  if (step) {  // an arrow: a page further, the menu kept open (drawn again: the page's click would not find it inside)
+    e.stopPropagation();
+    tzTop = wrapZone(tzTop + Number(step.dataset.tzStep) * tzRows());
+    renderTimezone();
+    return;
+  }
   const b = e.target.closest('[data-tz]');
   if (!b) return;
   tzMenu.hidden = true;
@@ -1652,6 +1901,7 @@ function renderSessionButton() {
   const [short, what] = SESSION_TEXT[state.session] || SESSION_TEXT.regular;
   sessBtn.textContent = short;
   sessBtn.title = `Sessions shown: ${what}. Click to change.`;
+  sessBtn.dataset.tip = `Sessions shown: ${what}. Tap to change.`;  // a finger's long press: its words (touch.js)
   sessBtn.setAttribute('aria-expanded', String(!sessMenu.hidden));
   if (sessMenu.hidden) return;
   sessMenu.innerHTML = [...$('sessionSelect').options].map((o) =>
@@ -1681,6 +1931,11 @@ sessMenu.addEventListener('click', (e) => {
 });
 window.addEventListener('resize', () => requestAnimationFrame(renderTimezone));
 requestAnimationFrame(renderTimezone);
+// a touch screen plugged in or taken away (touch.js): the time axis's band, its switches and the panes' grips again
+window.addEventListener('liminal:touch', () => {
+  if (!FETCHER_MODE) applyChartType();
+  requestAnimationFrame(() => { renderTimezone(); placePaneGrips(); });
+});
 
 chart.subscribeAction('onCrosshairChange', placeAxisGap);  // follows a pane added or dragged (cheap)
 
@@ -1692,8 +1947,10 @@ function applyChartType() {
   if (themeBase() === 'light') chart.setStyles(LIGHT_CHART);
   if (THEMES[state.theme].chart) chart.setStyles(THEMES[state.theme].chart);
   chart.setStyles({ yAxis: { size: Y_AXIS_WIDTH } });
+  if (touchUi()) chart.setStyles({ xAxis: { size: TOUCH_AXIS_SIZE } });  // room for a finger's switches under it
   chart.setStyles(CANDLE_TOOLTIP);  // the theme's styles above put back the library's legend
   chart.setStyles(ANCHOR_DOTS);  // and the library's filled anchor dots (the drawings' anchors are X marks)
+  if (anchorFinger) chart.setStyles(anchorReach());  // a finger's reach on them, while the pointer is one
   candleStyles();  // the theme's styles above put back the library's green and red
   applyPaneSpacing();
   chart.setStyles({ candle: { type: NATIVE[state.chartType] || 'candle_solid', ...DEFAULT_CANDLE } });
@@ -1893,7 +2150,14 @@ function renderHistoryChip(hist) {
   chip.hidden = !hist;
   chip.classList.toggle('warn', off);
   chip.textContent = off ? 'monthly* ⚠' : 'monthly*';
+  chipGist(chip, off ? 'apart from the feed' : 'history before the feed');
   chip.title = historyTitle(h);
+}
+
+// What a * chip means, in a few words beside it on a touch screen (no finger hovers its tooltip; a tap on the chip
+// shows the whole of it): the user, 2026-11-10, what a tag means becomes visible text on touch screens.
+function chipGist(chip, words) {
+  chip.append(Object.assign(document.createElement('span'), { className: 'chip-gist touch-only', textContent: words }));
 }
 
 function renderDerivedChip(some, total, interp = 0) {
@@ -1910,6 +2174,7 @@ function renderDerivedChip(some, total, interp = 0) {
   chip.dataset.shown = shown;
   chip.hidden = !some;
   chip.textContent = interp ? 'interpolated*' : some === total ? 'derived*' : '◦ derived*';
+  chipGist(chip, interp ? 'drawn between bars' : some === total ? 'built here' : '◦ built here');
   if (interp) {
     chip.title = `* Interpolated data: where no ${label} data exists, the dashed violet line is drawn between the `
       + '1-minute bars\' volume-weighted prices (derived, not trades); candles only where real data exists.';
@@ -2074,7 +2339,14 @@ kc.registerIndicator({
   },
 });
 
+// The type's settings are drawn again with each load; a field being typed in is never replaced (the user, 2026-11-10:
+// typing is never interrupted by a redraw): drawn once it is left (touch.js whenIdle).
 function renderTypeParams() {
+  if (window.LiminalTouch) window.LiminalTouch.whenIdle($('typeParams'), drawTypeParams);
+  else drawTypeParams();
+}
+
+function drawTypeParams() {
   const box = $('typeParams');
   box.innerHTML = '';
   const t = state.chartType;
@@ -2086,6 +2358,8 @@ function renderTypeParams() {
     const i = document.createElement('input');
     i.type = 'number'; i.min = '0'; i.step = step; i.placeholder = placeholder; i.value = p[key] ?? '';
     i.title = `${label} (empty = ${placeholder})`;
+    // the on-screen keyboard: digits for a count, digits and a point for a size; its Done closes it
+    window.LiminalTouch?.setKeyboard(i, step === '1' ? 'number' : 'decimal');
     i.addEventListener('change', () => {
       state.typeParams[t] = { ...(state.typeParams[t] || {}), [key]: i.value ? Number(i.value) : undefined };
       prefs.set('typeParams', state.typeParams); markDirty();
@@ -2103,9 +2377,27 @@ function renderTypeParams() {
   if (state.approximate && (t === 'range' || t === 'box')) {
     const s = document.createElement('span');
     s.className = 'approx'; s.textContent = t === 'box' ? 'derived*' : 'approx.'; s.title = state.approximate;
+    box.append(s);  // a finger's tap shows what it says (below)
+    // and its first words beside it on a touch screen ("range bars built from 1-minute bars, not ticks", "no data
+    // finer than this interval"); a box plot's own description (below) says what its derived* is
+    const gist = String(state.approximate).split(':')[0].trim();
+    if (gist && !gist.startsWith('*') && gist !== 'box') {
+      const g = document.createElement('span');
+      g.className = 'type-about touch-only';
+      g.textContent = gist;
+      box.append(g);
+    }
+  }
+  // the chart type's own description (its option's tooltip, which no finger reaches), in words on a touch screen
+  const about = $('typeSelect').selectedOptions?.[0]?.title;
+  if (about) {
+    const s = document.createElement('span');
+    s.className = 'type-about touch-only';
+    s.textContent = about;
     box.append(s);
   }
 }
+$('typeParams').addEventListener('click', (e) => tipOnTap(e.target.closest('.approx')));
 
 $('typeSelect').value = state.chartType;
 $('typeSelect').addEventListener('change', (e) => {
@@ -2131,6 +2423,12 @@ $('typeSelect').addEventListener('change', (e) => {
 // a pick waiting for the whole list (half a minute with thousands of symbols).
 function openSymbol(ticker, source = null) {
   if (!['stock', 'analysis'].includes(document.body.dataset.pane)) window.showPane?.('stock', { toggle: false });
+  // a phone: its chart, not the side panel lying over it (a tap on the rail's icon brings the panel back); the phone's
+  // closing, not yours: not kept (setPanelHidden), and a wider window shows the panel again
+  if (narrow() && !document.body.classList.contains('panel-hidden')) {
+    panelByPhone = true;
+    try { window.showPane?.(document.body.dataset.pane); } finally { panelByPhone = false; }
+  }
   state.picked = String(ticker).toUpperCase();  // yours: it goes in your register (activity.js), not one opened by itself
   state.userPick = state.picked;
   const known = state.symbols.some((s) => s.ticker === String(ticker).toUpperCase());
@@ -2335,6 +2633,9 @@ function renderSymbolButton() {
   const text = `<b>${e(state.ticker)}</b>${name ? `<span class="p-muted symbol-name">${e(name)}</span>` : ''}${dataIcon(data, 14)}`;
   $('symbolBtn').title = [info.name, info.exchange ? `listed on ${info.exchangeName || info.exchange}` : null, 'switch symbol (/)']
     .filter(Boolean).join(' · ');
+  // a finger's long press: the same words without the key a finger has not
+  $('symbolBtn').dataset.tip = [info.name, info.exchange ? `listed on ${info.exchangeName || info.exchange}` : null,
+    'tap to switch symbol'].filter(Boolean).join(' · ');
   if ($('symbolText').dataset.html !== text) { $('symbolText').innerHTML = text; $('symbolText').dataset.html = text; }
 }
 window.addEventListener('liminal:activity', renderSymbolButton);
@@ -2367,10 +2668,16 @@ function sortedSymbols(list) {
 
 function openSymbolDialog() {
   const dlg = $('symbolDialog');
+  // After a finger's tap no keyboard comes up by itself (the user, 2026-11-10: nothing calls up the keyboard until a
+  // field is tapped): the dialog opens on its map and tiles, its close button holding the focus (a modal dialog gives
+  // it to its first field otherwise), and a tap on the search brings the keyboard. A mouse's click and a key open it
+  // with the caret in the search, as before.
+  const typeNow = !window.LiminalTouch || window.LiminalTouch.mayFocus();
+  dlg.querySelector('.dialog-close')?.toggleAttribute('autofocus', !typeNow);
   $('symbolSearch').value = '';
   dlg.showModal();  // open first: the market map is laid out to the dialog's size
   renderSymbolList('');
-  $('symbolSearch').focus();
+  if (typeNow) $('symbolSearch').focus();
   loadSymbols().then(() => { if (dlg.open) renderSymbolList($('symbolSearch').value); }).catch(() => {});
 }
 
@@ -2565,7 +2872,9 @@ function renderMapPick() {
   el.hidden = !mapPick;
   if (!mapPick) return;
   const p = mapPick;
+  // what its tile's tooltip says (its sector, and that nothing is collected for it yet), in words on a touch screen
   el.innerHTML = `<b>${e(p.ticker)}</b> <span class="p-muted">${e(p.name || '')}</span>
+    <span class="p-muted small touch-only">${p.sector ? `${e(p.sector)} · ` : ''}not collected yet: + Watch has the fetcher collect it</span>
     <button type="button" class="primary" data-watch="${e(p.ticker)}" title="Add to the watchlist: the fetcher will collect it">+ Watch</button>`;
 }
 
@@ -2646,6 +2955,7 @@ function renderSymbolList(query) {
   const sort = SORTS.find((x) => x.key === state.switcherSort) || SORTS[0];
   $('sortBtn').textContent = sort.label;
   $('sortBtn').title = `${sort.title} (click to change)`;
+  $('sortBtn').dataset.tip = `${sort.title} (tap to change)`;
   const q = query.trim().toLowerCase();
   const list = $('symbolList');
   const matches = state.symbols.filter((s) =>
@@ -2750,16 +3060,28 @@ $('symbolList').addEventListener('click', async (e) => {
   $('symbolDialog').close();
   openSymbol(t.dataset.ticker);
 });
+// A tab keeps the caret in the search: with a mouse or a key as before, after a finger's tap only when the search had
+// it as the tab was pressed (its keyboard up then); else no keyboard comes up unasked.
+let searchHeld = false;
+$('scopeTabs').addEventListener('pointerdown', () => { searchHeld = document.activeElement === $('symbolSearch'); });
 $('scopeTabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-scope]');
   if (!b) return;
   state.switcherScope = b.dataset.scope;
   prefs.set('switcherScope', state.switcherScope);
   renderSymbolList($('symbolSearch').value);
-  $('symbolSearch').focus();
+  if (searchHeld || !window.LiminalTouch || window.LiminalTouch.mayFocus()) $('symbolSearch').focus();
+  searchHeld = false;
 });
 $('symbolDialog').addEventListener('keydown', (e) => {
   const moves = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] };
+  // a letter typed on a keyboard (a tablet's, the switcher opened by a tap: its close button has the focus) goes into
+  // the search, as it did when the search had the focus from the start (focused now, the key lands in it)
+  if (e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing
+      && !e.target.closest?.('input, select, textarea, [contenteditable="true"]')) {
+    $('symbolSearch').focus();
+    return;
+  }
   if (moves[e.key] && !(e.target === $('symbolSearch') && ['ArrowLeft', 'ArrowRight'].includes(e.key))) {
     e.preventDefault();
     moveTileFocus(...moves[e.key]);
@@ -2835,6 +3157,7 @@ function renderPeriods() {
             + 'the whole chart, the sessions before with seconds too. '
           : '\n\nWhere the window has nothing finer than minutes (the night on Blue Ocean), the zoom holds at them. ')
           + 'Click to override: seconds anyway, the minutes drawn wide among them.');
+  tag.dataset.tip = tag.title.replace(/\bClick to\b/g, 'Tap to');  // a finger's long press: its words (touch.js)
 }
 
 // "1 min", "30 sec": a wide bar's length.
@@ -2851,6 +3174,9 @@ function toggleAutoOverride() {
   checkLod();
 }
 $('periods').addEventListener('click', (e) => { if (e.target.closest('#autoLevel')) toggleAutoOverride(); });
+// derived*, interpolated*, monthly*: what they mean is their tooltip, shown in the bubble by a finger's tap
+$('periods').addEventListener('click', (e) => tipOnTap(e.target.closest('.derived-chip')));
+$('modelWindow').addEventListener('click', (e) => tipOnTap(e.currentTarget));  // why some bars are not drawn
 $('periods').addEventListener('keydown', (e) => {
   if (e.target.closest('#autoLevel') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleAutoOverride(); }
 });
@@ -3044,16 +3370,45 @@ const TEMPLATE_KEYS = ['totalStep', 'drawingMode', 'needDefaultPointFigure', 'ne
   'needDefaultYAxisFigure', 'styles', 'createPointFigures', 'createXAxisFigures', 'createYAxisFigures',
   'performEventPressedMove', 'performEventMoveForDrawing'];
 
+// The selected drawing as it was last drawn: its points and its figures' (a ray's, an extended or a horizontal line's
+// and a channel's lines run to the plot's edge), in its pane's pixels. The bar a finger's selection has (drawclip.js)
+// stands by what is seen of the drawing, which its points alone do not tell: they may be out of view while its line
+// still crosses the chart.
+let selectedDrawn = null;  // {id, points: [{x, y}], lines: [[a, b], ...]}
+function noteDrawn(overlay, coordinates, figures) {
+  const points = [...coordinates], lines = [];
+  for (const f of figures) {
+    for (const a of [].concat(f?.attrs ?? [])) {
+      const cs = Array.isArray(a?.coordinates) ? a.coordinates : [];
+      cs.forEach((c, i) => { points.push(c); if (i > 0 && f.type === 'line') lines.push([cs[i - 1], c]); });
+      if (Number.isFinite(a?.x) && Number.isFinite(a?.y)) {
+        points.push({ x: a.x, y: a.y });
+        if (Number.isFinite(a.width) && Number.isFinite(a.height)) points.push({ x: a.x + a.width, y: a.y + a.height });
+      }
+    }
+  }
+  selectedDrawn = { id: overlay.id, points: points.filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y)), lines };
+  window.DrawingClipboard?.follow();  // its bar placed again once the chart has drawn it where it is now
+}
+const drawnOf = (id) => (selectedDrawn && selectedDrawn.id === id ? selectedDrawn : null);
+
 function withAnchorMarks(base) {  // an instance of the tool's class: the template's fields are on it
   const template = Object.fromEntries(TEMPLATE_KEYS.filter((k) => base[k] != null).map((k) => [k, base[k]]));
   const figures = template.createPointFigures;
   template.createPointFigures = (params) => {
-    const own = figures?.(params) ?? [];
+    const own = [].concat(figures?.(params) ?? []);
     const { overlay, coordinates } = params;
+    const selected = overlay.id === state.selectedOverlay;
+    // a finger's reach on its lines, on a touch screen ('reach': hit only while the pointer is a finger or a pen): a tap
+    // in it selects the drawing, a press in it drags the drawing only once selected (the library's own 2 px still drag)
+    const reach = touchUi() && !overlay.isDrawing()
+      ? own.filter((f) => f?.type === 'line' && f.ignoreEvent !== true).map((f) => ({ type: 'reach', attrs: f.attrs,
+        ignoreEvent: [...(Array.isArray(f.ignoreEvent) ? f.ignoreEvent : []), ...(selected ? [] : REACH_NO_DRAG)] })) : [];
+    if (selected && !overlay.isDrawing()) noteDrawn(overlay, coordinates, own);
     // while drawn, the points placed (the last follows the pointer); then while pointed at or selected
     const marked = overlay.isDrawing() ? coordinates.slice(0, -1)
       : overlay.id === state.selectedOverlay || overlay.id === state.hoveredOverlay ? coordinates : [];
-    return marked.length ? [...own, anchorMarks(marked)] : own;
+    return marked.length ? [...reach, ...own, anchorMarks(marked)] : [...reach, ...own];
   };
   return { ...template, name: base.name };
 }
@@ -3067,19 +3422,84 @@ function svg(name) {
   return `<svg viewBox="0 0 20 20" aria-hidden="true">${ICON[name]}</svg>`;
 }
 
+// -- drawing by finger (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface") ----
+// The library places a drawing's points tap by tap, but a finger has no hover: nothing showed where the next point
+// would go, and a drag between taps pans the chart. While a drawing a finger started is under way, a line over the chart
+// says what to tap next, with Cancel (the Escape key's); and a finger held for the crosshair (the library's long press)
+// then slid takes the drawing's next point along with it, as a mouse's hover does (the overlay's own step); the next
+// tap places it.
+const drawHint = document.createElement('div');
+drawHint.className = 'draw-hint';
+drawHint.hidden = true;
+drawHint.setAttribute('aria-live', 'polite');
+drawHint.innerHTML = '<span class="draw-hint-text"></span><button type="button" class="draw-hint-cancel">Cancel</button>';
+$('chart').append(drawHint);
+drawHint.querySelector('.draw-hint-cancel').addEventListener('click', () => { cancelDrawing(); setActiveTool('cursor'); });
+let hintFor = null;  // the drawing under way that a finger started: its hint shows
+
+const drawingNow = () => (state.drawingId ? chart.getOverlays({ id: state.drawingId })[0] ?? null : null);
+function renderDrawHint() {
+  const o = hintFor && hintFor === state.drawingId ? drawingNow() : null;
+  if (!o || !o.isDrawing?.()) { drawHint.hidden = true; hintFor = null; return; }
+  const points = Math.max(1, (o.totalStep || 2) - 1), step = Math.max(1, o.currentStep || 1);  // step: the point placed next
+  const tool = (TOOLS.find((t) => t && t[0] === o.name)?.[1] || 'drawing').split(/ \(|:/)[0]
+    .replace(/^(?!Fibonacci)[A-Z]/, (c) => c.toLowerCase());  // "trend line"; Fibonacci keeps his capital
+  const what = o.name === 'measure' ? (step === 1 ? 'Tap the highlight\'s centre' : 'Tap one of its corners')
+    : points === 1 ? `Tap where the ${tool} goes`
+      : step === 1 ? `Tap the ${tool}'s first point` : step >= points ? 'Tap its last point' : 'Tap its next point';
+  drawHint.querySelector('.draw-hint-text').textContent = step > 1 ? `${what} (hold, then slide, to see it first)` : what;
+  drawHint.hidden = false;
+}
+chart.subscribeAction('onCrosshairChange', (c) => {  // a finger's crosshair: the next point goes with it
+  if (!hintFor || hintFor !== state.drawingId || !fingered() || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return;
+  const o = drawingNow();
+  const paneId = o?.paneId || 'candle_pane';
+  if (!o || !o.isDrawing?.() || (o.currentStep || 1) < 2 || (c.paneId || 'candle_pane') !== paneId) return;
+  const [p] = chart.convertFromPixel([{ x: c.x, y: c.y }], { paneId });
+  if (!Number.isFinite(p?.value) || typeof o.stepDrawingModeEventMoveForDrawing !== 'function') return;
+  // where the tap will place it: the magnet's snap included, as the library's own does on the tap
+  const value = magnetValue(o, paneId, p.dataIndex, p.value, c.y);
+  o.stepDrawingModeEventMoveForDrawing({ timestamp: p.timestamp, dataIndex: p.dataIndex, value });  // drawn with the crosshair
+});
+
+// The magnet's snap of `value` (at `y` px in its pane) on the bar at `dataIndex`, as the library places a point on a
+// tap (its _coordinateToPoint): strong to the nearest of the bar's open, high, low and close; weak the same within the
+// bar's range, and beyond its high or low only within the drawing's modeSensitivity px of it. No magnet: as it is.
+function magnetValue(o, paneId, dataIndex, value, y) {
+  const mode = o.mode || 'normal';
+  const bar = mode !== 'normal' && paneId === 'candle_pane' ? chart.getDataList()[dataIndex] : null;
+  if (!bar) return value;
+  const near = (v) => {
+    const at = chart.convertToPixel({ dataIndex, value: v }, { paneId })?.y;
+    return Number.isFinite(at) && Math.abs(at - y) < (o.modeSensitivity ?? 8);
+  };
+  if (value > bar.high) return mode === 'weak_magnet' && !near(bar.high) ? value : bar.high;
+  if (value < bar.low) return mode === 'weak_magnet' && !near(bar.low) ? value : bar.low;
+  const top = Math.max(bar.open, bar.close), bottom = Math.min(bar.open, bar.close);
+  if (value > top) return value - top < bar.high - value ? top : bar.high;
+  if (value < bottom) return value - bar.low < bottom - value ? bar.low : bottom;
+  return top - value < value - bottom ? top : bottom;
+}
+
 function overlayEvents() {
   return {
-    onDrawEnd: () => { highlightCenter = null; state.drawingId = null; setActiveTool('cursor'); saveDrawings(); },
+    onDrawEnd: () => { highlightCenter = null; state.drawingId = null; setActiveTool('cursor'); saveDrawings(); renderDrawHint(); },
+    // each point a finger places: the hint says what to tap next, once the library has taken its step
+    onDrawing: () => { if (hintFor) requestAnimationFrame(renderDrawHint); },
     // a highlight's corner dragged grows the box about its center (its performEventPressedMove)
     onPressedMoveStart: (e) => { highlightCenter = e.overlay.name === 'measure' ? boxCenter(e.overlay.points) : null; },
+    // the bar beside a drawing a finger selected (drawclip.js) follows it as it is dragged
+    onPressedMoving: () => { window.DrawingClipboard?.follow(); },
     onPressedMoveEnd: () => { highlightCenter = null; saveDrawings(); },
     onRemoved: (e) => {
       state.selectedOverlay = null;
       if (e?.overlay?.name === 'measure') scheduleHighlightPanel();
+      window.DrawingClipboard?.unselected(e?.overlay?.id);
       setTimeout(saveDrawings, 0);  // the library calls this before taking it off the chart: saved without it
     },
-    onSelected: (e) => { state.selectedOverlay = e.overlay.id; },
-    onDeselected: () => { state.selectedOverlay = null; },
+    // a drawing a finger's tap selects gets its bar on a touch screen (Delete, Copy, Cut, Paste, Duplicate: drawclip.js)
+    onSelected: (e) => { state.selectedOverlay = e.overlay.id; window.DrawingClipboard?.selected(e.overlay); },
+    onDeselected: (e) => { state.selectedOverlay = null; window.DrawingClipboard?.unselected(e?.overlay?.id); },
     onMouseEnter: (e) => { state.hoveredOverlay = e.overlay.id; },
     onMouseLeave: (e) => { if (state.hoveredOverlay === e.overlay.id) state.hoveredOverlay = null; },
     // a right-click opens the drawing's menu (copy, cut, paste, duplicate, delete: drawclip.js); the
@@ -3102,11 +3522,15 @@ function startDrawing(name) {
   }
   state.drawingId = chart.createOverlay(create);
   setActiveTool(name);
+  window.DrawingClipboard?.unselected();  // a selected drawing's bar is not in the way of the new one
+  hintFor = fingered() ? state.drawingId : null;  // a finger's tap on the tool: what to tap next, over the chart
+  renderDrawHint();
 }
 
 function cancelDrawing() {
   if (state.drawingId) { chart.removeOverlay({ id: state.drawingId }); state.drawingId = null; }
   highlightCenter = null;
+  renderDrawHint();
 }
 
 function setActiveTool(name) {
@@ -3123,6 +3547,7 @@ function renderTools() {
     const [name, title] = t;
     const b = document.createElement('button');
     b.dataset.tool = name; b.title = title; b.setAttribute('aria-label', title); b.innerHTML = svg(name);
+    b.dataset.tip = title.replace(/ \((Esc|Alt\+H)\)/, '');  // a finger's long press: its name, without a key it has not
     b.addEventListener('click', () => startDrawing(name));
     nav.append(b);
   }
@@ -3141,6 +3566,10 @@ function renderTools() {
   const paintMagnet = (b) => {
     b.classList.toggle('active', state.magnet !== 'normal');
     b.title = `Magnet: ${state.magnet.replace('_', ' ')} (snaps to open/high/low/close)`;
+    // its mode in a word under the icon on a touch screen (weak or strong both look 'active'; the mouse reads the title)
+    let badge = b.querySelector('.tool-badge');
+    if (!badge) { badge = Object.assign(document.createElement('span'), { className: 'tool-badge touch-only' }); b.append(badge); }
+    badge.textContent = { weak_magnet: 'weak', strong_magnet: 'strong' }[state.magnet] || '';
   };
   paintMagnet(magnet);
   action('lock', 'Lock / unlock all drawings', () => {
@@ -3660,6 +4089,7 @@ function updateStatus(loaded) {
   $('statusText').textContent = short.join(' · ');
   $('statusText').title = full.join('\n');
 }
+$('statusText').addEventListener('click', (e) => tipOnTap(e.currentTarget));  // a finger's tap: its full wording
 
 // -- side panel (like TradingView's right-hand panel) ------------------------------------
 // Symbol header, the highlight's full statistics, key stats from local daily bars,
@@ -3677,9 +4107,18 @@ function setPanelWidth(w, save = true) {
   requestAnimationFrame(() => chart.resize());
 }
 
+// On a phone (below 700 px wide) the panel lies over the chart (style.css): it opens when you ask for it (a tap on a
+// rail icon), not by itself as the page opens on a chart view, where it would cover the chart, and a symbol picked in
+// it shows its chart (openSymbol). That hiding is the phone's, not yours: it is not kept (the panel as you left it is),
+// and a window made wider than a phone shows the panel again (initPanel). A browser that cannot tell (no
+// navigator.userActivation) opens it as before.
 function setPanelHidden(hidden) {
+  const byPhone = narrow() && (hidden ? panelByPhone
+    : !!navigator.userActivation && !navigator.userActivation.isActive);
+  if (byPhone) hidden = true;
+  panelForced = byPhone;
   document.body.classList.toggle('panel-hidden', hidden);
-  prefs.set('panelHidden', hidden);
+  if (!byPhone) prefs.set('panelHidden', hidden);
   requestAnimationFrame(() => chart.resize());
 }
 
@@ -3693,17 +4132,38 @@ function setPanelHidden(hidden) {
     grip.classList.add('dragging');
     const right = $('sidePanel').getBoundingClientRect().right;
     const move = (ev) => setPanelWidth(right - ev.clientX);
-    const up = () => { grip.classList.remove('dragging'); grip.removeEventListener('pointermove', move); };
+    // The drag ends however the pointer goes: let go, taken by the browser or its capture lost (as the now handle's);
+    // style.css gives the grip touch-action: none, so a finger's drag is the grip's, not a scroll
+    const ENDS = ['pointerup', 'pointercancel', 'lostpointercapture'];
+    const up = () => {
+      grip.classList.remove('dragging');
+      grip.removeEventListener('pointermove', move);
+      for (const ev of ENDS) grip.removeEventListener(ev, up);
+    };
     grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up, { once: true });
-    grip.addEventListener('pointercancel', up, { once: true });
+    for (const ev of ENDS) grip.addEventListener(ev, up);
   });
   grip.addEventListener('keydown', (e) => {
     const w = $('sidePanel').getBoundingClientRect().width;
     if (e.key === 'ArrowLeft') setPanelWidth(w + 16);
     else if (e.key === 'ArrowRight') setPanelWidth(w - 16);
   });
-  window.addEventListener('resize', () => setPanelWidth($('sidePanel').getBoundingClientRect().width || 320, false));
+  // a phone's panel lies over the chart at a width of its own (style.css): its width is not the one kept for the page
+  window.addEventListener('resize', () => { if (!narrow()) setPanelWidth($('sidePanel').getBoundingClientRect().width || 320, false); });
+  // wider than a phone again: a panel only the phone's layout had hidden comes back as you left it (on a chart view
+  // through the rail's own showPane, its icon and the panel's content with it)
+  NARROW?.addEventListener?.('change', () => {
+    if (narrow() || !panelForced) return;
+    panelForced = false;
+    if (prefs.get('panelHidden', false)) return;  // you had hidden it
+    if (window.showPane && document.body.dataset.view === 'chart') window.showPane(document.body.dataset.pane, { toggle: false });
+    else setPanelHidden(false);
+  });
+  // the phone's close button (on wider screens the rail icon hides the panel, as before): as a tap on that icon
+  $('panelClose').addEventListener('click', () => {
+    if (window.showPane && document.body.dataset.view === 'chart') window.showPane(document.body.dataset.pane);
+    else setPanelHidden(true);
+  });
 })();
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -3791,7 +4251,8 @@ function renderInventory() {
       <thead><tr><th></th>${cols.map(head).join('')}</tr></thead>
       <tbody>${rows.map((label) => `<tr><th>${esc(label)}</th>${cols.map((c) => cell(c, label)).join('')}</tr>`).join('')}</tbody>
     </table></div>
-    <div class="p-muted small">● sent by the feed · * derived here from finer data · ○ not built yet</div>`;
+    <div class="p-muted small">● sent by the feed · * derived here from finer data · ○ not built yet${pending
+      ? '<span class="touch-only"> · Build missing: from what is stored, no requests to any feed</span>' : ''}</div>`;
 }
 
 // -- bad data: each feed's pruned list (baddata.py; docs/ARCHITECTURE.md "Bad data") --------------
@@ -4057,7 +4518,9 @@ function renderHighlightPanel() {
   const s = currentHighlight();
   const box = $('pHighlight');
   if (!s) {
-    box.innerHTML = `<h3>Highlight</h3><div class="p-muted">Draw a highlight (Alt+H) to see its statistics here.</div>`;
+    // a touch screen's words added to the key's (a touch screen may have a keyboard and a mouse too)
+    box.innerHTML = `<h3>Highlight</h3><div class="p-muted">Draw a highlight (Alt+H<span
+      class="touch-only">, or the Highlight tool among the drawing tools</span>) to see its statistics here.</div>`;
     return;
   }
   // Percent change is only meaningful for prices (a slope or an area can cross zero).

@@ -1,0 +1,102 @@
+/* Touch and the on-screen keyboard (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the
+   interface"; "Support for virtual keyboard on tablets and phones") for the rail's views: Plugins, Preferences, the
+   watchlist, Datasets, Databases, Live, News, Federal, Resources and Exchanges. style.css holds the rest of the page's
+   styles and its touch rules. A mouse and a keyboard see nothing new here: touch-action is a finger's and a pen's
+   alone, the sizes are a touch screen's ((any-pointer: coarse)), the stacked layout a phone's (below 700 px), and
+   .touch-only words show on a touch screen only (the library's touch.js). */
+
+/* -- the views' own gesture areas, and no double-tap zoom on their controls (a pinch still zooms the page) -------- */
+/* the datasets chart (datasets.js): one finger pans it sideways and two pinch it, an upward or downward swipe scrolls
+   the page; a drawing tool takes every drag */
+.ds-charts { touch-action: pan-y; }
+.ds-charts.tool-draw { touch-action: none; }
+/* a sparkline (resources.js): a finger held on it reads it and, moved sideways, reads along; up or down scrolls */
+svg.spark { touch-action: pan-y; }
+/* what is tapped in the views beside the controls style.css names (a sector's bar, a row that opens its symbol: its
+   cells, for touch-action is not a table row's) */
+.ex-bar, .act-table tr.has-data > td, .w-table tr[data-ticker] > td { touch-action: manipulation; }
+
+/* -- words for a finger (shown on a touch screen only: .touch-only) ---------------------------------------------------- */
+.pref-why { margin: -2px 0 6px; overflow-wrap: anywhere; }  /* a row's words under it (prefs.js) */
+.pl-why { margin: 2px 0 6px; overflow-wrap: anywhere; }  /* why a control is off (plugins.js) */
+.pl-path { white-space: normal; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }  /* a database's path */
+.cursor-tags { margin-top: 6px; }  /* what the bar's tags mean (panels.js, the Analysis panel) */
+.cursor-tags > div + div { margin-top: 2px; }
+.ex-side h4 .ex-hint { margin-left: 6px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+/* the status bar's message has more to read: a tap shows it whole (the ⓘ at its start, never cut with the line) */
+#netText .net-more { flex: none; color: var(--muted); }
+
+/* -- touch screens: the views' own targets a finger's size (style.css gives every button, picker and field its 40 px
+      and a field's words 16 px; these outrank it where a view's parts need more, or less), and nothing shown only to a
+      hovering pointer --------------------------------------------------------------------------------------------- */
+@media (any-pointer: coarse) {
+  /* rows that open something: taller, and a › where the hover's highlight said so */
+  .act-table tr.has-data td { padding-top: 10px; padding-bottom: 10px; }
+  #qRows tr.has-data td:first-child b::after, #viewLive tr.has-data td:nth-child(2) b::after { content: " ›"; color: var(--muted); }
+  /* side by side: room between them for a finger */
+  .filters, .q-filters .q-group, .ex-movers, .live-effect, .view-actions { gap: 8px; }
+  .pl-key-btns button + button { margin-left: 8px; }
+  .act-table .small-btn { margin-left: 8px; }
+
+  /* Exchanges, Plugins, Databases (venues.js, plugins.js, databases.js) */
+  .ex-bar { min-height: 40px; }
+  .pl-part > summary { min-height: 40px; box-sizing: border-box; }
+  .pl-setup input.pl-key { min-width: 160px; }
+
+  /* News and Federal (news.js, gov.js): a headline's exchange and tickers as chips, apart */
+  .news-main .small a[data-exchange], .news-main .small a.tk { display: inline-flex; align-items: center; min-height: 36px;
+    padding: 0 10px; margin: 4px 4px 0 0; border: 1px solid var(--border); border-radius: 18px; text-decoration: none; }
+
+  /* Resources (resources.js): the sparklines tall enough for a finger to read, stretched to their box, their line as thin */
+  svg.spark { height: 40px; }
+  .res-pair svg.spark { height: 32px; }
+  svg.spark path { vector-effect: non-scaling-stroke; }
+
+  /* Datasets (datasets.js): its rows and marks a finger's size; no text picked up by a long press on the chart */
+  .ds-item { min-height: 40px; }
+  .ds-chart .ds-mark .hit { stroke-width: 28; }
+  .ds-charts { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .ds-note-input { min-height: 40px; }
+
+  /* The watchlist (watchlist.js): its − always shown, a finger's size (the user, 2026-11-10; with a mouse it stays
+     hidden until the row is hovered, the user's choice of 2026-10-31), its head's buttons apart */
+  .w-table .w-x { width: 40px; padding: 0; }
+  .w-table .w-x button { visibility: visible; width: 40px; height: 40px; font-size: 18px; }
+  #pWatch .w-head { gap: 8px; flex-wrap: wrap; }
+  #pWatch .w-head button { height: auto; min-width: 40px; }  /* + and 🗑 as wide as tall (style.css's 24 px is a mouse's) */
+  #watchFilter, #pWatch .w-addbox input { padding: 6px 8px; }
+
+  /* Preferences (prefs.js): the swatches, the colour popup's palette and picker, the indicators' rows */
+  .pref-swatch { width: 40px; height: 40px; }
+  .pref-pop { width: min(288px, calc(100vw - 32px)); }
+  .pref-pop-grid { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  #pPrefs .pref-pop .pref-pop-grid button[data-pick] { min-width: 0; min-height: 0; }  /* square, its column's width (about 40 px) */
+  .pref-pop-any { width: 44px; height: 40px; }
+  .pref-ind { min-height: 40px; }
+  .pref-ind .p-muted { white-space: normal; }  /* the indicator's whole name, which its tooltip held */
+}
+
+/* -- phones (the user, 2026-11-10: below about 700 px wide an app's panes stack in one column in the same order, the
+      list, then the data, then the specifics, and the page scrolls as one; larger screens keep their layout exactly) */
+@media (max-width: 700px) {
+  /* Exchanges, Plugins and Databases: the list, the one picked and its specifics one under another, scrolled as one */
+  main > .view.ex-view:not([hidden]) { display: block; overflow-y: auto; }
+  .ex-view > div, .ex-view > aside { overflow: visible; min-height: 0; }
+  .ex-venues { border-right: none; border-bottom: 1px solid var(--border); }
+  .ex-side { border-left: none; border-top: 1px solid var(--border); }
+  .pl-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ex-tools { flex-wrap: wrap; }
+  .ex-tools input { flex: 1 1 100%; min-width: 0; }
+  /* the views that scroll (Fetcher, Live, News, Federal, Resources): their heads wrap, their filters full width */
+  .scroll-view { padding: 10px 12px 14px; }
+  .view-head { flex-wrap: wrap; align-items: flex-start; }
+  .view-head > .view-actions { flex-wrap: wrap; }
+  #viewNews .view-head > .view-actions, #viewGov .view-head > .view-actions { flex: 1 1 100%; }
+  #newsSearch, #govSearch { width: 100%; }
+  .live-effect { margin-left: 0; flex-wrap: wrap; }
+  .news-row .src { width: 84px; }
+  /* Datasets: the picker, then the chart, scrolled as one */
+  main > .view.ds-view { overflow-y: auto; padding: 10px 12px; }
+  .ds-body { flex: none; }
+  .ds-main { flex: none; }
+}

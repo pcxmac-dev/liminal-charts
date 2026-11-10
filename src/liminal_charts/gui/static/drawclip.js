@@ -4,7 +4,11 @@
    Duplicate and Delete; on the chart elsewhere Paste. What is copied is kept in the browser
    (localStorage), so it pastes into the other chart views, another symbol or another tab. A paste
    lands at the pointer (the drawing's first point there, its shape kept in bars and price), or, with
-   the pointer off the chart, PASTE_BARS bars to the right of where it was copied from. */
+   the pointer off the chart, PASTE_BARS bars to the right of where it was copied from.
+   On a touch screen (the user, 2026-11-10: a drawing selected by a tap shows a small bar beside it on touch screens
+   only, Delete, Copy, Cut, Paste, Duplicate; the right-click menu stays for the mouse): a finger has neither the menu
+   (the chart makes its right click of a mouse's right button alone) nor the keys, so a drawing a finger's tap selects
+   has those five beside it; a finger's long press on the chart is the crosshair's, and opens no menu. */
 (() => {
   const KEY = 'liminal:drawings:clipboard';
   const PASTE_BARS = 5;
@@ -157,9 +161,11 @@
     ({ copy: () => copy(o), cut: () => cut(o), paste: () => paste(at), duplicate: () => duplicate(o),
        delete: () => chart.removeOverlay({ id: o.id }) })[b.dataset.act]?.();
   });
-  // the chart's own event says which drawing it was; the browser's opens the menu (in either order)
+  // the chart's own event says which drawing it was; the browser's opens the menu (in either order). A finger's long
+  // press (Chrome's and Edge's make one of it) is the crosshair's: no menu, nor the browser's own, there.
   chartEl.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (e.pointerType === 'touch' || e.pointerType === 'pen' || (e.pointerType == null && fingered())) return;
     const b = chartEl.getBoundingClientRect();
     const at = { x: e.clientX - b.left, y: e.clientY - b.top };
     setTimeout(() => {
@@ -170,6 +176,105 @@
   });
   document.addEventListener('pointerdown', (e) => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); }, true);
   chartEl.addEventListener('wheel', closeMenu, { passive: true });
+
+  // -- the bar beside a drawing a finger selected (touch screens) -----------------------------------------------------
+  // Above the drawing where there is room, else below it; it follows the drawing as the chart scrolls or zooms, or the
+  // drawing is dragged, and goes once it is deselected, removed, or the chart is left. It stands by what is seen of the
+  // drawing as the chart last drew it (app.js drawnOf: a horizontal line, a ray, an extended line or a channel runs on
+  // past its points, which may be out of view); a long line with no room above it has the bar above where it crosses
+  // the middle of what is seen. Paste puts what was copied PASTE_BARS bars to the right of the selected drawing's first
+  // point (on the price pane), kept in view.
+  const BAR = [['delete', 'Delete'], ['copy', 'Copy'], ['cut', 'Cut'], ['paste', 'Paste'], ['duplicate', 'Duplicate']];
+  const bar = document.createElement('div');
+  bar.className = 'draw-bar';
+  bar.hidden = true;
+  bar.setAttribute('role', 'toolbar');
+  bar.setAttribute('aria-label', 'The drawing selected');
+  bar.innerHTML = BAR.map(([act, text]) => `<button type="button" data-bar="${act}">${text}</button>`).join('');
+  chartEl.append(bar);
+  let barFor = null, barFrame = 0;  // the drawing's id; the placing waiting for a frame
+
+  const barDrawing = () => (barFor ? chart.getOverlays({ id: barFor })[0] ?? null : null);
+  function hideBar() {
+    barFor = null;
+    bar.hidden = true;
+  }
+  // the heights (px) at which the segments cross the upright line at x (an upright segment there: its two ends)
+  function crossings(lines, x) {
+    const out = [];
+    for (const [a, b] of lines || []) {
+      if (!a || !b || (a.x - x) * (b.x - x) > 0) continue;
+      if (a.x === b.x) out.push(a.y, b.y);
+      else out.push(a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x));
+    }
+    return out.filter(Number.isFinite);
+  }
+  function placeBar() {
+    barFrame = 0;
+    const o = barDrawing();
+    if (!o || document.body.dataset.view !== 'chart') { hideBar(); return; }
+    const paneId = o.paneId || 'candle_pane';
+    // what the chart drew of it (its pane's pixels: down by the pane's top), else its points (the chart's pixels)
+    const drawn = drawnOf(o.id);
+    const dy = drawn ? chart.getSize(paneId)?.top ?? 0 : 0;
+    const at = drawn ? drawn.points
+      : [].concat(chart.convertToPixel((o.points || []).map((p) => ({ timestamp: p.timestamp, value: p.value })),
+                                       { paneId, absolute: true }));
+    const xs = at.map((p) => p.x).filter(Number.isFinite), ys = at.map((p) => p.y + dy).filter(Number.isFinite);
+    const plot = chart.getSize('candle_pane', 'main')?.width || chartEl.clientWidth;
+    const floor = chart.getSize('x_axis_pane')?.top ?? chartEl.clientHeight;  // not over the time axis
+    bar.querySelector('[data-bar="paste"]').disabled = !clip()?.items?.length;
+    bar.hidden = false;
+    // its drawing out of sight (scrolled off, hidden): the bar waits unseen, and comes back with it
+    const seen = o.visible !== false && xs.length && ys.length && Math.max(...xs) >= 0 && Math.min(...xs) <= plot
+      && Math.max(...ys) >= 0 && Math.min(...ys) <= floor;
+    bar.style.visibility = seen ? '' : 'hidden';
+    if (!seen) return;
+    const w = bar.offsetWidth, h = bar.offsetHeight;
+    const cx = (Math.max(0, Math.min(...xs)) + Math.min(plot, Math.max(...xs))) / 2;
+    let top = Math.min(...ys) - h - 14;  // above it, clear of a fingertip on it
+    if (top < 4) {
+      // no room above it (a long line reaching the chart's top, say): above where its lines cross the middle of what
+      // is seen of it, else below that (or below the drawing)
+      const cross = drawn ? crossings(drawn.lines, cx).map((y) => y + dy).filter((y) => y >= 0 && y <= floor) : [];
+      top = cross.length && Math.min(...cross) - h - 14 >= 4 ? Math.min(...cross) - h - 14
+        : (cross.length ? Math.max(...cross) : Math.max(...ys)) + 14;
+    }
+    bar.style.left = `${Math.round(Math.max(4, Math.min(cx - w / 2, plot - w - 4)))}px`;
+    bar.style.top = `${Math.round(Math.max(4, Math.min(top, floor - h - 4)))}px`;
+  }
+  const follow = () => { if (barFor && !barFrame) barFrame = requestAnimationFrame(placeBar); };
+  // app.js overlayEvents: a drawing selected (by a finger's tap, on a touch screen: its bar); `selected` above is the
+  // drawing the keys copy and cut
+  function barSelected(o) {
+    if (!o || !fingered() || !window.LiminalTouch?.touch) { hideBar(); return; }
+    barFor = o.id;
+    follow();
+  }
+  function unselected(id) { if (!id || id === barFor) hideBar(); }  // deselected or removed
+  for (const action of ['onVisibleRangeChange', 'onScroll', 'onZoom']) chart.subscribeAction(action, follow);
+  window.addEventListener('resize', follow);
+  window.addEventListener('liminal:view', () => { if (document.body.dataset.view !== 'chart') hideBar(); else follow(); });
+  // PASTE_BARS bars on from the selected drawing's first point (chart pixels), when it is on the price pane; kept in
+  // view (a horizontal line's or a ray's first point may be far off it, and a paste there would not be seen)
+  function besideOf(o) {
+    if ((o.paneId || 'candle_pane') !== 'candle_pane' || !o.points?.length) return null;
+    const p = chart.convertToPixel({ timestamp: o.points[0].timestamp, value: o.points[0].value }, { paneId: 'candle_pane' });
+    if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) return null;
+    const size = chart.getSize('candle_pane', 'main');
+    const width = size?.width || chartEl.clientWidth, height = size?.height || chartEl.clientHeight;
+    const x = p.x + PASTE_BARS * chart.getBarSpace().bar;
+    return { x: Math.max(8, Math.min(x, width - 8)), y: Math.max(8, Math.min(p.y, height - 8)) };
+  }
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-bar]');
+    if (!b || b.disabled) return;
+    const o = barDrawing();
+    if (!o) { hideBar(); return; }
+    ({ delete: () => chart.removeOverlay({ id: o.id }), copy: () => copy(o), cut: () => cut(o),
+       paste: () => paste(besideOf(o)), duplicate: () => duplicate(o) })[b.dataset.bar]?.();
+    follow();  // still selected (a copy, a paste): Paste offered once something is copied
+  });
 
   // -- keys --------------------------------------------------------------------------------------
   document.addEventListener('keydown', (e) => {
@@ -198,5 +303,6 @@
   window.DrawingClipboard = {
     rightClick(overlay) { rightClicked = { overlay, at: Date.now() }; },  // app.js overlayEvents
     copy, cut, paste, duplicate,
+    selected: barSelected, unselected, follow,  // app.js overlayEvents and noteDrawn: the bar a finger's selection has
   };
 })();

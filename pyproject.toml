@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 # the library (the stores, the plugin contract, the collector, the scheme: liminal-libs) brings the
 # data dependencies (pandas below 3.1, numpy, requests, exchange_calendars, duckdb, pymongo, plotly)
 dependencies = [
-    "liminal-libs @ git+https://github.com/pcxmac-dev/liminal-libs@release/0.2.0",  # 1.7.0: the class contract (API 2.0), the plugin selection, the core classes, the data specs (API 2.1), the apps' frame, renamed
+    "liminal-libs @ git+https://github.com/pcxmac-dev/liminal-libs@release/0.2.0",  # 1.42.0: touch.js (touch screens, the on-screen keyboard); since 1.7.0: the class contract (API 2.0), the plugin selection, the core classes, the data specs (API 2.1), the apps' frame, renamed
 ]
 
 [project.optional-dependencies]

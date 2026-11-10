@@ -110,6 +110,22 @@
   const futuresFamily = (type) => FAMILY[type] || 'Other';
   const futuresTypeName = (type) => TYPE_NAMES[type] || (type ? type[0].toUpperCase() + type.slice(1).replace(/_/g, ' ') : 'Other');
 
+  /* On a touch screen (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the
+     interface"): a long press on a tile shows its details (its title, in touch.js's bubble) and a tap
+     still opens it. Most tiles are far smaller than a fingertip, so a finger's tap on a group's heading
+     opens that group across the whole map, its tiles as large as the map allows, the way back above it
+     (‹ All and the groups between). There the headings are strips about 30 px tall across their whole
+     group, each a tap's own target (tabindex -1): Chrome and Edge move a finger's tap to the nearest
+     element that answers taps, which were only the tiles under a heading. A mouse sees the map as
+     before. A map is known by its id: the group opened stays open while its map is drawn again with
+     the same symbols (a resize, a refresh of their prices), until the way back; other symbols (a
+     search, another exchange, another list) show the whole map again. */
+  const ZOOM_HEAD = 44;  // px: the way back over a group opened
+  const opened = new Map();  // a map's id -> {path, sig}: the group a finger opened (['XNAS', 'Technology']), over which symbols
+  const drawn = new WeakMap();  // a map's element -> {items, opts, paths}: as last drawn, its headings' paths
+  const fingered = () => !!window.LiminalTouch && ['touch', 'pen'].includes(window.LiminalTouch.lastInput);
+  const sigOf = (items) => `${items.length}:${items.map((s) => s.ticker).join(',')}`;  // which symbols a map shows
+
   /* A map divided into groups, each into the groups of the next level, the last into tiles: the
      user, 2026-10-28: "heat maps for all the exchanges (and relevent sectors divided in) as well as
      watchlist(s)". items: [{ticker, name, sector, industry, exchange, marketCap, changePct, close, icon}]
@@ -118,7 +134,11 @@
      the group's heading}. Each group's heading carries its move, its tiles' size-weighted mean. */
   function render(el, items, opts = {}) {
     const W = el.clientWidth, H = el.clientHeight;
-    const TOP_HEAD = 18, GROUP_HEAD = 16, INDUSTRY_HEAD = 13;
+    const finger = !!(window.LiminalTouch && window.LiminalTouch.touch);  // headings a finger can tap
+    const TOP_HEAD = finger ? 32 : 18, GROUP_HEAD = finger ? 28 : 16, INDUSTRY_HEAD = finger ? 26 : 13;
+    // a finger's heading is shown where its group keeps at least as much again for its tiles; a mouse's as before
+    const roomFor = (h, head, mouse) => (finger ? h > 2 * head + 4 : h > mouse);
+    const tap = finger ? ' tabindex="-1"' : '';  // a heading a tap lands on (above), as a tile is
     const levels = opts.levels || [(s) => s.sector, (s) => s.industry];
     const size = opts.size || ((s) => s.marketCap);
     const label = opts.label || ((depth, name) => name);
@@ -141,6 +161,8 @@
       return w ? m / w : null;
     };
     let html = '';
+    const paths = [];  // each heading's group, from the map's top (data-g: its place here): what a tap on it opens
+    const trail = [];  // the groups being drawn into, from the top
     const draw = (node, depth, x, y, w, h) => {
       const groups = [...node].map(([name, child]) => ({ name, child, value: sum(child) }));
       const tiles = depth === levels.length - 1;  // the last level's groups hold tiles
@@ -148,20 +170,43 @@
         const g = r.item, chg = move(g.child), name = label(depth, g.name);
         const heading = `${esc(name)}${chg == null ? '' : ` <span class="map-move">${pctText(chg)}</span>`}`;
         const tip = `${name}: ${flat(g.child).length.toLocaleString()} · ${pctText(chg)}`;
+        const at = paths.push([...trail, g.name]) - 1;
         if (tiles) {
-          const ih = r.h > 46 && r.w > 70 && node.size > 1 ? INDUSTRY_HEAD : 0;
-          if (ih) html += `<div class="map-industry" title="${esc(tip)}" style="left:${r.x}px;top:${r.y}px;width:${r.w - 1}px">${heading}</div>`;
+          const ih = roomFor(r.h, INDUSTRY_HEAD, 46) && r.w > 70 && node.size > 1 ? INDUSTRY_HEAD : 0;
+          if (ih) html += `<div class="map-industry" data-g="${at}"${tap} title="${esc(tip)}" style="left:${r.x}px;top:${r.y}px;width:${r.w - 1}px">${heading}</div>`;
           for (const t of squarify(g.child, r.x, r.y + ih, r.w, r.h - ih)) html += tileHtml(t.item, t, opts);
         } else {
           const top = depth === 0 && levels.length > 2;  // the exchanges round their sectors
-          const head = r.h > 40 && r.w > 50 ? (top ? TOP_HEAD : GROUP_HEAD) : 0;
-          html += `<div class="map-sector${top ? ' map-top' : ''}" title="${esc(tip)}" style="left:${r.x}px;top:${r.y}px;width:${r.w - 2}px;height:${r.h - 2}px">
-            ${head ? `<span class="map-sector-name">${heading}</span>` : ''}</div>`;
+          const want = top ? TOP_HEAD : GROUP_HEAD;
+          const head = roomFor(r.h, want, 40) && r.w > 50 ? want : 0;
+          html += `<div class="map-sector${top ? ' map-top' : ''}" data-g="${at}" title="${esc(tip)}" style="left:${r.x}px;top:${r.y}px;width:${r.w - 2}px;height:${r.h - 2}px">
+            ${head ? `<span class="map-sector-name"${tap}>${heading}</span>` : ''}</div>`;
+          trail.push(g.name);
           draw(g.child, depth + 1, r.x + 1, r.y + head, r.w - 3, r.h - head - 3);
+          trail.pop();
         }
       }
     };
-    draw(root, 0, 0, 0, W, H);
+    // The group a finger opened (below): across the map under the way back, while the map shows the same symbols.
+    const was = el.id ? opened.get(el.id) : null;
+    let path = was && was.sig === sigOf(items) ? was.path : null;
+    let inner = root;
+    for (const name of path || []) inner = inner instanceof Map ? inner.get(name) : undefined;
+    if (was && (!path || !inner)) { opened.delete(el.id); path = null; inner = root; }
+    if (!path) draw(root, 0, 0, 0, W, H);
+    else {
+      const k = path.length, chg = move(inner);
+      html += `<div class="map-zoom" style="height:${ZOOM_HEAD}px"><button type="button" data-map-up="0" title="The whole map">‹ All</button>`
+        + path.map((name, i) => `<span class="map-zoom-sep">›</span>${i < k - 1
+          ? `<button type="button" data-map-up="${i + 1}">${esc(label(i, name))}</button>`
+          : `<b>${esc(label(i, name))}</b>${chg == null ? '' : ` <span class="map-move">${pctText(chg)}</span>`}`
+            + ` <span class="map-count">${flat(inner).length.toLocaleString()}</span>`}`).join('')
+        + '</div>';
+      trail.push(...path);
+      if (Array.isArray(inner)) for (const t of squarify(inner, 0, ZOOM_HEAD, W, H - ZOOM_HEAD)) html += tileHtml(t.item, t, opts);
+      else draw(inner, k, 0, ZOOM_HEAD, W, H - ZOOM_HEAD);
+    }
+    drawn.set(el, { items, opts, paths });
     el.innerHTML = html;
   }
 
@@ -173,6 +218,29 @@
     el.style.height = `${Math.ceil(items.length / perRow) * h}px`;
     el.innerHTML = items.map((s, i) => tileHtml(s, { x: (i % perRow) * w, y: Math.floor(i / perRow) * h, w, h }, opts)).join('');
   }
+
+  // A finger's tap on a group's heading opens that group across its map; the way back's buttons work for any pointer
+  // (on a touch screen with a mouse too). After the page's own handlers: a tap on a tile opens the tile there, as before.
+  document.addEventListener('click', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    const el = t && t.closest('.market-map');
+    const shown = el && el.id ? drawn.get(el) : null;
+    if (!shown) return;
+    const up = t.closest('[data-map-up]');
+    const head = up ? null : t.closest('[data-g]');
+    let path = null;
+    if (up) path = (opened.get(el.id)?.path || []).slice(0, Number(up.dataset.mapUp));
+    else if (head && fingered()) path = shown.paths[Number(head.dataset.g)] || null;
+    if (!path) return;
+    if (path.length) opened.set(el.id, { path, sig: sigOf(shown.items) }); else opened.delete(el.id);
+    render(el, shown.items, shown.opts);
+  });
+  // a dialog closed (the symbol picker): its maps open whole the next time
+  document.addEventListener('close', (e) => {
+    if (e.target instanceof Element) e.target.querySelectorAll('.market-map[id]').forEach((m) => opened.delete(m.id));
+  }, true);
+  // Safari shows a pressed tile (:active, visual-touch.css) only where a touch is listened for
+  document.addEventListener('touchstart', () => {}, { passive: true });
 
   window.MarketMap = { render, renderStrip, squarify, changeColor, exchangeName, futuresFamily, futuresTypeName };
 })();

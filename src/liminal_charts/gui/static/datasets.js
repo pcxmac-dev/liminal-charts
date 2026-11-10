@@ -18,7 +18,13 @@
    (per market for the COT report). Date lines and zones are dates only and show in every view and
    chart; lines, levels and notes are values of the view they were drawn in (its transform, and the
    range a rebased transform starts from) and show on the chart of their unit. Click a mark to
-   select it, Delete removes it. */
+   select it, Delete removes it.
+
+   Touch (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface"; "Support for
+   virtual keyboard on tablets and phones"): one finger drags to pan (a swipe up or down scrolls the page), two pinch
+   to zoom about their middle, a tap reads every series at its date (kept until a tap elsewhere), a finger held still
+   a moment then moved reads along the dates; a drawing tool takes every drag, and a note's field is focused within
+   the tap that places it, so its keyboard comes up. Marks are a finger's size to pick. */
 (() => {
   const $ = (id) => document.getElementById(id);
   const MAX = 8;
@@ -327,6 +333,13 @@
       '<rect x="7" y="4" width="10" height="16" fill="currentColor" opacity=".25" stroke="none"/><path d="M7 4v16M17 4v16"/>'],
     ['note', 'Note: click where it goes, type, Enter', '<path d="M6 5h12M12 5v14"/>'],
   ];
+  // each tool's how-to for a finger, shown beside the tools on a touch screen (their tooltips are a mouse's)
+  const TOUCH_HOW = {
+    pan: 'Drag to pan, pinch to zoom, tap to read the values (hold, then move, to read along)',
+    line: 'Trend line: drag from one point to another', hline: 'Level: tap at its value',
+    vline: 'Date line: tap at its date', zone: 'Date zone: drag across its dates', note: 'Note: tap where it goes, type it, then Done',
+  };
+  const touchUI = () => !!window.LiminalTouch?.touch;  // a touch screen: marks a finger's size, a finger's words
   const ctx = () => (isCot() ? `${st.name}|${st.market}` : st.name);
   const valueView = () => `${transform()}|${['growth', 'index'].includes(transform()) ? st.range : ''}`;
   const markList = () => (st.marks[ctx()] ||= []);
@@ -353,6 +366,7 @@
 
   function renderMarks(g, marks, c) {
     const L = geom.left, R = geom.W - geom.right;
+    const handle = touchUI() ? 24 : 14;  // a zone's handle, a finger's height on a touch screen (its line's: views-touch.css)
     for (const m of marks) {
       if (!timeOnly(m) && m.unit !== c.unit) continue;
       const grp = el('g', { class: `ds-mark${m.id === st.selected ? ' sel' : ''}`, 'data-mark': m.id }, g);
@@ -363,7 +377,7 @@
       if (m.type === 'zone') {
         const a = geom.x(Math.min(m.t1, m.t2)), b = geom.x(Math.max(m.t1, m.t2));
         el('rect', { x: a, y: c.y0, width: Math.max(1, b - a), height: c.y1 - c.y0, class: 'zone' }, grp);
-        el('rect', { x: a, y: c.y0, width: Math.max(4, b - a), height: 14, class: 'handle' }, grp);
+        el('rect', { x: a, y: c.y0, width: Math.max(4, b - a), height: handle, class: 'handle' }, grp);
         if (c.first) {
           const tx = el('text', { x: Math.max(L, a) + 4, y: c.y0 + 11, class: 'mk-label' }, grp);
           tx.textContent = `${day(Math.min(m.t1, m.t2))} → ${day(Math.max(m.t1, m.t2))}`;
@@ -413,7 +427,8 @@
         aria-pressed="${st.tool === k}" title="${esc(title)}">${ICON(path)}</button>`).join('')
       + `<button type="button" data-act="remove" title="Remove the selected mark (Delete)" ${st.selected ? '' : 'disabled'}>${ICON('<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>')}</button>`
       + `<button type="button" data-act="clear" title="Remove every mark of this ${isCot() ? 'market' : 'dataset'}" ${markList().length ? '' : 'disabled'}>${st.clearArmed ? 'Clear all?' : 'Clear'}</button>`;
-    $('dsCharts').classList.toggle('tool-draw', st.tool !== 'pan');
+    $('dsCharts').classList.toggle('tool-draw', st.tool !== 'pan');  // a drawing tool takes a finger's every drag too
+    if ($('dsHow')) $('dsHow').textContent = TOUCH_HOW[st.tool] || '';
   }
   function renderZoom() {
     if (!$('dsZoomInfo')) return;
@@ -421,15 +436,20 @@
     $('dsZoomReset').disabled = !st.view;
   }
 
-  function openNote(e, c, t, v) {  // an inline field (the embedded browser has no prompt())
+  // An inline field (the embedded browser has no prompt()). A finger's (a pen's) opens as it lifts and is focused
+  // within that tap, so its on-screen keyboard comes up (Safari raises none for a focus from a timer); in the lower
+  // half of the screen it goes above the point, clear of the keyboard.
+  function openNote(e, c, t, v, finger = false) {
     const main = $('dsMain').getBoundingClientRect();
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'ds-note-input';
-    input.placeholder = 'Note, then Enter';
+    input.placeholder = finger ? 'Note, then Done' : 'Note, then Enter';
     input.maxLength = 200;
+    window.LiminalTouch?.setKeyboard(input, 'text', { autocomplete: 'off' });  // its Enter key a Done that keeps it
+    const above = finger && e.clientY > (window.visualViewport?.height || innerHeight) / 2;
     input.style.left = `${Math.min(e.clientX - main.left + 8, main.width - 230)}px`;
-    input.style.top = `${e.clientY - main.top - 14}px`;
+    input.style.top = `${e.clientY - main.top - (above ? 56 : 14)}px`;
     $('dsMain').append(input);
     let done = false;
     const finish = (keep) => {
@@ -437,6 +457,9 @@
       done = true;
       const text = input.value.trim();
       input.remove();
+      // the view fits the window (it scrolls not): brought back to its top if the keyboard's room scrolled it
+      const view = $('viewDatasets');
+      if (view.scrollTop && getComputedStyle(view).overflowY === 'hidden') view.scrollTop = 0;
       if (keep && text) addMark({ type: 'note', unit: c.unit, view: valueView(), t, v, text });
       else { st.tool = 'pan'; draw(); }
     };
@@ -446,7 +469,9 @@
       if (k.key === 'Escape') finish(false);
     });
     input.addEventListener('blur', () => finish(true));
-    setTimeout(() => input.focus(), 0);
+    if (!finger) setTimeout(() => input.focus(), 0);
+    else if (window.LiminalTouch) window.LiminalTouch.raiseKeyboard(input);
+    else input.focus();
   }
 
   const hiddenKeys = () => new Set(st.hidden[st.name] || []);
@@ -470,7 +495,7 @@
     renderLegend(all);
     renderTools();
     $('dsEmpty').hidden = !!full.length;
-    $('dsEmpty').textContent = all.length ? 'Everything is hidden: click a name above to show it.' : 'Pick series on the left.';
+    $('dsEmpty').textContent = all.length ? `Everything is hidden: ${touchUI() ? 'tap' : 'click'} a name above to show it.` : 'Pick series on the left.';
     if (!full.length) { geom = null; renderTable([]); renderZoom(); return; }
     const [fa, fb] = extent(full);
     const lo = st.view ? Math.max(fa, st.view.lo) : fa;
@@ -704,7 +729,8 @@
     const tf = transform();
     const extra = tf === 'growth' ? 'Growth of $1: each return compounded from the start of the range, so lines start together. '
       : tf === 'index' ? 'Indexed: each series divided by its first value in the range, times 100. ' : '';
-    const toggles = isCot() ? 'Click a trader group in the legend to hide or show it. ' : 'Click a name in the legend to hide or show it. ';
+    const press = touchUI() ? 'Tap' : 'Click';  // a finger's word on a touch screen
+    const toggles = isCot() ? `${press} a trader group in the legend to hide or show it. ` : `${press} a name in the legend to hide or show it. `;
     $('dsNote').textContent = extra + toggles + (NOTES[st.name] || '');
   }
 
@@ -769,6 +795,7 @@
         <button type="button" id="dsLog" class="toggle" title="Logarithmic scale (positive values only)">Log scale</button>
         <button type="button" id="dsTable" class="toggle" title="The values of the latest dates as a table">Table</button>
         <div id="dsTools" class="group ds-tools" role="group" aria-label="Markup"></div>
+        <span id="dsHow" class="p-muted small touch-only"></span>
         <div class="group" role="group" aria-label="Zoom">
           <button type="button" id="dsZoomOut" title="Zoom out (−)">−</button>
           <button type="button" id="dsZoomIn" title="Zoom in (+)">+</button>
@@ -778,11 +805,11 @@
         <span id="dsError" class="down small" role="alert"></span>
       </div>
       <div class="ds-body">
-        <div class="ds-pick"><input id="dsSearch" type="search" autocomplete="off" aria-label="Search">
+        <div class="ds-pick"><input id="dsSearch" type="search" aria-label="Search" ${window.LiminalTouch?.keyboard('search') || 'autocomplete="off"'}>
           <div id="dsList" class="ds-list" role="listbox" aria-label="Series"></div></div>
         <div id="dsMain" class="ds-main">
           <div id="dsLegend" class="ds-legend"></div>
-          <div id="dsCharts" class="ds-charts" tabindex="0"
+          <div id="dsCharts" class="ds-charts" tabindex="0" data-touch-own
             aria-label="Chart: arrow keys move along the dates, + and − zoom, 0 shows the whole range, Delete removes the selected mark"></div>
           <div id="dsEmpty" class="p-muted ds-empty" hidden>Pick series on the left.</div>
           <div id="dsTip" class="ds-tip" hidden></div>
@@ -806,6 +833,9 @@
       if (b) toggle(b.dataset.key);
     });
     $('dsSearch').addEventListener('input', (e) => { st.query = e.target.value; renderPicker(); });
+    $('dsSearch').addEventListener('keydown', (e) => {  // an on-screen keyboard's Search: put away, so the series it found show
+      if (e.key === 'Enter' && window.Views?.softKeyboard?.()) e.target.blur();
+    });
     $('dsList').addEventListener('change', (e) => {
       const box = e.target.closest('input[type=checkbox]');
       if (!box) return;
@@ -859,13 +889,50 @@
     const at = (e, c) => { const r = c.svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     const clampX = (px) => Math.max(geom.left, Math.min(geom.W - geom.right, px));
     const capture = (e) => { try { charts.setPointerCapture(e.pointerId); } catch { /* no live pointer: drag without capture */ } };
+    // Fingers (touch-action pan-y on the chart, none while a drawing tool is up: views-touch.css): one pans as the mouse
+    // does, two pinch about their middle (the time under it stays under it), a tap reads every series at its date and
+    // a finger held still HOLD_TO_READ ms then moved reads along the dates instead of panning.
+    const fingers = new Map();  // pointerId -> {x, y}: the fingers on the chart
+    let pinch = null;  // {d, t, span}: the fingers' distance, the time under their middle and the window's span, at its start
+    let noting = null;  // a finger's note, opened as it lifts: {id, clientX, clientY, c, t, v}
+    const HOLD_TO_READ = 350;
+    const readAt = (clientX) => {
+      const r = charts.getBoundingClientRect();
+      showHover(geom.allT[nearest(geom.allT, geom.invX(clampX(clientX - r.left)))]);
+    };
+    const two = () => [...fingers.values()].slice(0, 2);
+    function startPinch() {
+      if (st.drag) clearTimeout(st.drag.hold);
+      st.drag = null;
+      charts.classList.remove('panning');
+      if (st.drawing) { st.drawing.preview?.remove(); st.drawing = null; }
+      noting = null;
+      const [a, b] = two(), r = charts.getBoundingClientRect();
+      pinch = { d: Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), t: geom.invX(clampX((a.x + b.x) / 2 - r.left)), span: geom.hi - geom.lo };
+      hideHover();
+    }
+    function movePinch() {
+      const [a, b] = two(), r = charts.getBoundingClientRect();
+      const span = pinch.span * pinch.d / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y));  // apart: a shorter span, zoomed in
+      const lo = pinch.t - (((a.x + b.x) / 2 - r.left - geom.left) / (geom.W - geom.left - geom.right)) * span;
+      panTo(lo, lo + span);
+    }
     charts.addEventListener('pointerdown', (e) => {
       if (!geom || e.button !== 0) return;
+      if (e.pointerType === 'touch') {
+        fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        capture(e);
+        if (fingers.size === 2) { startPinch(); return; }
+        if (fingers.size > 2 || pinch) return;
+      }
       if (st.tool === 'pan') {
         const hit = e.target.closest('[data-mark]');
         if (hit) { st.selected = hit.dataset.mark; draw(); return; }
         if (st.selected) { st.selected = null; draw(); }
-        st.drag = { x: e.clientX, lo: geom.lo, hi: geom.hi, moved: false };
+        const d = { x: e.clientX, y: e.clientY, lo: geom.lo, hi: geom.hi, moved: false, id: e.pointerId,
+          finger: e.pointerType !== 'mouse', reading: false, hold: 0 };
+        if (d.finger) d.hold = setTimeout(() => { if (st.drag === d && !d.moved && geom) { d.reading = true; readAt(d.x); } }, HOLD_TO_READ);
+        st.drag = d;
         capture(e);
         return;
       }
@@ -876,21 +943,36 @@
       const t = geom.invX(p.x), v = c.invY(p.y);
       if (st.tool === 'hline') addMark({ type: 'hline', unit: c.unit, view: valueView(), v });
       else if (st.tool === 'vline') addMark({ type: 'vline', t });
-      else if (st.tool === 'note') openNote(e, c, t, v);
-      else {
+      else if (st.tool === 'note' && e.pointerType === 'mouse') openNote(e, c, t, v);
+      else if (st.tool === 'note') {
+        // a finger's: opened as it lifts (below); the mouse events a browser sends after a tap, whose mousedown took the
+        // focus from the new field and so dropped the note, are not sent
+        e.preventDefault();
+        noting = { id: e.pointerId, clientX: e.clientX, clientY: e.clientY, c, t, v };
+      } else {
         st.drawing = { type: st.tool, c, t, v, x: p.x, y: p.y, preview: null };
         capture(e);
       }
     });
     charts.addEventListener('pointermove', (e) => {
       if (!geom) return;
+      if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch) { if (fingers.size >= 2) movePinch(); return; }
+      if (noting && e.pointerId === noting.id) {  // moved off its point: no note (a tap places one)
+        if (Math.hypot(e.clientX - noting.clientX, e.clientY - noting.clientY) > 8) noting = null;
+        return;
+      }
       if (st.drag) {  // pan: the window follows the pointer
-        const dx = e.clientX - st.drag.x;
-        if (!st.drag.moved && Math.abs(dx) < 3) return;
-        st.drag.moved = true;
+        const d = st.drag;
+        if (e.pointerId !== d.id) return;
+        if (d.reading) { readAt(e.clientX); return; }  // held, then moved: the values read along the dates
+        const dx = e.clientX - d.x;
+        if (!d.moved && (d.finger ? Math.hypot(dx, e.clientY - d.y) <= 8 : Math.abs(dx) < 3)) return;
+        if (!d.moved) clearTimeout(d.hold);
+        d.moved = true;
         charts.classList.add('panning');
-        const dt = -dx / (geom.W - geom.left - geom.right) * (st.drag.hi - st.drag.lo);
-        panTo(st.drag.lo + dt, st.drag.hi + dt);
+        const dt = -dx / (geom.W - geom.left - geom.right) * (d.hi - d.lo);
+        panTo(d.lo + dt, d.hi + dt);
         return;
       }
       if (st.drawing) {  // a live preview of the line or zone
@@ -903,15 +985,36 @@
         for (const [k, v] of Object.entries(attrs)) d.preview.setAttribute(k, v);
         return;
       }
+      if (e.pointerType === 'touch') return;  // a finger reads by a tap or a hold (above), not by passing over
       const r = charts.getBoundingClientRect();
       const px = e.clientX - r.left;
       if (px < geom.left || px > geom.W - geom.right) { hideHover(); return; }
       showHover(geom.allT[nearest(geom.allT, geom.invX(px))]);
     });
     const release = (e) => {
+      fingers.delete(e.pointerId);
+      if (pinch) {  // a finger off a pinch: it ends, and the finger left pans on from where it is
+        if (fingers.size < 2) {
+          pinch = null;
+          const [rest] = fingers.entries();
+          if (rest && geom) st.drag = { x: rest[1].x, y: rest[1].y, lo: geom.lo, hi: geom.hi, moved: true, id: rest[0], finger: true, reading: false, hold: 0 };
+        }
+        return;
+      }
+      if (noting && e.pointerId === noting.id) {  // a finger's tap with the note tool: its field, focused in this tap
+        const n = noting;
+        noting = null;
+        if (e.type === 'pointerup' && geom) openNote(n, n.c, n.t, n.v, true);
+        return;
+      }
       if (st.drag) {
+        const d = st.drag;
+        if (e.pointerId !== d.id) return;
+        clearTimeout(d.hold);
         st.drag = null;
         charts.classList.remove('panning');
+        // a finger's tap (no pan, no hold): every series read at its date, kept until a tap elsewhere
+        if (d.finger && !d.moved && !d.reading && e.type === 'pointerup' && geom) readAt(e.clientX);
         return;
       }
       const d = st.drawing;
@@ -927,7 +1030,11 @@
     };
     charts.addEventListener('pointerup', release);
     charts.addEventListener('pointercancel', release);
-    charts.addEventListener('pointerleave', () => { if (!st.drag && !st.drawing) hideHover(); });
+    // a finger's reading stays after it lifts (a touch's pointer leaves as it lifts): a tap elsewhere puts it away
+    charts.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch' && !st.drag && !st.drawing) hideHover(); });
+    document.addEventListener('pointerdown', (e) => {
+      if (st.hoverT != null && e.pointerType !== 'mouse' && !charts.contains(e.target)) hideHover();
+    }, true);
     charts.addEventListener('wheel', (e) => {
       if (!geom) return;
       e.preventDefault();
@@ -935,6 +1042,12 @@
       zoomAt(geom.invX(clampX(e.clientX - r.left)), e.deltaY > 0 ? 1.2 : 1 / 1.2);
     }, { passive: false });
     charts.addEventListener('dblclick', (e) => { if (st.tool === 'pan' && !e.target.closest('[data-mark]')) resetZoom(); });
+    // a finger held still on the chart reads it (above): no browser menu opens as it lifts (Windows makes one of a
+    // finger's press and hold); a mouse's right click and the menu key open the browser's as before
+    charts.addEventListener('contextmenu', (e) => {
+      const by = window.LiminalTouch?.lastInput;
+      if (e.pointerType ? e.pointerType !== 'mouse' : by === 'touch' || by === 'pen') e.preventDefault();
+    });
     charts.addEventListener('keydown', (e) => {
       if (!geom) return;
       const zoom = { '+': 1 / 1.5, '=': 1 / 1.5, '-': 1.5, '_': 1.5 }[e.key];

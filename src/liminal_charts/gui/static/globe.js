@@ -4,8 +4,9 @@
    amber, closed ones grey. Night is shaded behind the terminator. Coastlines and country borders
    are drawn when vendor/world/countries-110m.json (Natural Earth, public domain) is present.
    The globe turns in real time (the sun's position is computed every frame, so the Earth
-   rotates under it at 15 degrees an hour), wherever it has been dragged to. Drag to turn it;
-   click the sun (or double-click anywhere) to glide back to noon.
+   rotates under it at 15 degrees an hour), wherever it has been dragged to. Drag to turn it (a
+   mouse or a finger), scroll or pinch to zoom; click or tap the sun (or double-click or double-tap
+   anywhere) to glide back to noon.
    The Moon is drawn at its true size relative to the Earth, lit from the Sun's real direction,
    off the globe's edge in its real direction (in front of or behind the Earth); planets show
    where they are overhead, faintly. Behind the globe is the real sky in that direction: stars
@@ -55,7 +56,7 @@
   let topo = null;                 // decoded boundary lines: [[ [lon,lat], ... ], ...]
   let hover = null;
   let nightCache = null;
-  let news = { items: [], i: 0, shownAt: 0, fetchedAt: 0 };  // announcements ticker
+  let news = { items: [], i: 0, shownAt: 0, fetchedAt: 0, held: false };  // announcements ticker (held: by a finger's tap)
   const ticker = document.getElementById('newsTicker');
   const TICK_MS = 6500;
 
@@ -816,8 +817,8 @@
       ctx.globalAlpha = 1;
       ctx.strokeStyle = perf != null ? (STATE_COLOR[m.state] || STATE_COLOR.unknown) : (dark ? '#0b0e15' : '#fff');
       ctx.lineWidth = perf != null ? 1.6 : 1; ctx.stroke();
-      // only operating exchanges are named on the map (and the one under the pointer); a closed one
-      // the news ticker features keeps just its steady gold ring
+      // only operating exchanges are named on the map (and the one under the pointer, or the one a
+      // finger tapped last: `hover` too); a closed one the news ticker features keeps just its steady gold ring
       if (m.state === 'open' || m.state === 'break' || m === hover) labelled.push({ m, p, perf });
     }
     drawLabels(labelled, g, dark);
@@ -847,7 +848,7 @@
   let lastInfo = '';
 
   // Label boxes for the exchanges operating now (stock, FX and crypto alike; a closed one only while
-  // hovered), by one convention: markers closer than CLUSTER px on screen (a
+  // hovered, or once a finger tapped it), by one convention: markers closer than CLUSTER px on screen (a
   // city's exchanges, FX centre and crypto exchanges, or neighbours at this zoom) share one box: the
   // city (or cities) in bold, coloured by state, then a line per market: its code (the exchange's
   // MIC, FX, or a crypto exchange's name), its important indexes joined by " · " (an FX centre's
@@ -950,6 +951,9 @@
     else ctx.arc(x, y, r, 0, 2 * Math.PI);
   }
 
+  // What a market's daily move is read from: a mouse reads it hovering the move, a touch screen shows it under the row
+  const basisOf = (p) => p.basis || `${p.proxy}, a US-listed fund tracking this market (USD, ${p.day})`;
+
   function renderList() {
     if (!markets || document.body.dataset.view !== 'markets') return;
     const regions = ['Asia-Pacific', 'Europe', 'Middle East & Africa', 'Americas', 'Foreign exchange', 'Crypto'];
@@ -970,9 +974,10 @@
             <span class="mk-dot" style="background:${STATE_COLOR[m.state] || STATE_COLOR.unknown}"></span>
             <div class="mk-main"><b${m.performance ? ` style="color:${perfColor(m.performance.changePct)}"` : ''}>${esc(m.city)}</b>
               <span class="p-muted small">${esc(m.index)}</span>
-              ${m.performance ? `<span class="small" style="color:${perfColor(m.performance.changePct)}" title="Latest daily move: ${esc(m.performance.basis || `${m.performance.proxy}, a US-listed fund tracking this market (USD, ${m.performance.day})`)}">${m.performance.changePct >= 0 ? '+' : ''}${m.performance.changePct.toFixed(2)}% <span class="p-muted">${esc(m.performance.proxy)}</span></span>` : ''}
+              ${m.performance ? `<span class="small" style="color:${perfColor(m.performance.changePct)}" title="Latest daily move: ${esc(basisOf(m.performance))}">${m.performance.changePct >= 0 ? '+' : ''}${m.performance.changePct.toFixed(2)}% <span class="p-muted">${esc(m.performance.proxy)}</span></span>` : ''}
               <div class="p-muted small"><span${m.performance ? ` style="color:${perfColor(m.performance.changePct)}"` : ''}>${esc(m.name)}</span> · ${esc(localTime(m.timezone))}
                 ${m.aroundTheClock ? ' · around the clock' : m.today ? ` · ${m.kind === 'fx' ? 'business hours ' : ''}${esc(m.today.open)}–${esc(m.today.close)}${m.today.break ? ` (lunch ${esc(m.today.break)})` : ''}` : m.state !== 'unknown' ? ` · ${m.kind === 'fx' ? 'not a business day' : 'no session today'}` : ''}</div>
+              ${m.performance ? `<div class="p-muted small touch-only mk-basis">Latest daily move: ${esc(basisOf(m.performance))}</div>` : ''}
               ${m.holidays?.length ? `<div class="small mk-hol">Holidays: ${m.holidays.map(esc).join(', ')}</div>` : ''}
               ${m.calendarEnds && m.calendarEnds < new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10)
                 ? `<div class="small p-muted">holidays published to ${esc(m.calendarEnds)}</div>` : ''}
@@ -1009,70 +1014,118 @@
     if (!it) { ticker.innerHTML = ''; return; }
     const ex = markets?.world.find((m) => m.code === it.exchange);
     const text = esc(it.text) + (it.tickers?.length ? ` <span class="p-muted">${esc(it.tickers.join(' '))}</span>` : '');
-    ticker.innerHTML = `<span class="src" title="Source">${esc(it.source)}</span>`
-      + (safeUrl(it.url) ? `<a class="txt" href="${esc(safeUrl(it.url))}" target="_blank" rel="noopener noreferrer">${text}</a>` : `<span class="txt">${text}</span>`)
+    // data-tip: the words a finger's long press shows (touch.js); a mouse reads the titles as before. On a touch screen
+    // the source and the count are a finger's buttons (below), each a tap's own target as large as a fingertip
+    // (visual-touch.css): Chrome and Edge move a tap to the nearest element that answers taps, the item's link beside them.
+    const touch = !!(window.LiminalTouch && window.LiminalTouch.touch);
+    const tap = touch ? ' role="button" tabindex="-1"' : '';
+    ticker.innerHTML = `<span class="src"${tap}${touch ? ` aria-pressed="${news.held}"` : ''} title="Source" data-tip="${esc(it.source)}: tap to ${news.held ? 'let the items go on' : 'hold this item'}">${esc(it.source)}</span>`
+      + (safeUrl(it.url) ? `<a class="txt" href="${esc(safeUrl(it.url))}" target="_blank" rel="noopener noreferrer">${text}</a>` : `<span class="txt" data-tip="${esc(it.text)}">${text}</span>`)
       + `<span class="when">${ex ? esc(ex.city) + ' · ' : ''}${it.kind === 'news' ? ago(it.time) : 'now'}</span>`
-      + `<span class="count">${(news.i % news.items.length) + 1}/${news.items.length}</span>`;
+      + `<span class="count"${tap} data-tip="Tap for the next item; swipe the ticker sideways for the next or the one before">${news.held ? 'held · ' : ''}${(news.i % news.items.length) + 1}/${news.items.length}</span>`;
     ticker.classList.toggle('slide', slide);
     if (slide) { void ticker.offsetWidth; }
   }
 
   function tick() {
-    if (!news.items.length || ticker.matches(':hover')) return;  // hovering holds the item
+    if (!news.items.length || mouseOver || fingerOn || news.held) return;  // held (below)
     if (Date.now() - news.shownAt < TICK_MS) return;
     news.i = (news.i + 1) % news.items.length;
     news.shownAt = Date.now();
     renderTicker(true);
   }
 
+  function step(by) {  // the next item (1) or the one before (-1), shown its full time
+    if (!news.items.length) return;
+    news.i = ((news.i + by) % news.items.length + news.items.length) % news.items.length;
+    news.shownAt = Date.now();
+    renderTicker(true);
+  }
+
+  // The ticker holds its item while a mouse is over it, to read it (a pen hovering too, as :hover did): the pointer's
+  // own enter and leave, not :hover, which a touch screen leaves on the last element tapped (that held the ticker for
+  // good). A finger cannot hover (the user, 2026-11-10: "I want to support touch as well as mouse clicking on the
+  // interface"): a finger on the ticker holds the item while it is down, a tap on its source label holds it until the
+  // next such tap ("held" by its count), a tap on the count shows the next item, and a swipe sideways the next or the
+  // one before. A mouse's clicks are as they were: the item's link opens, nothing else.
+  let mouseOver = false, fingerOn = null, tickerBy = 'mouse', swipedAt = 0;
+  ticker.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') mouseOver = true; });
+  ticker.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') mouseOver = false; });
+  ticker.addEventListener('pointerdown', (e) => {
+    tickerBy = e.pointerType === 'mouse' ? 'mouse' : 'finger';
+    if (tickerBy === 'finger' && e.isPrimary) fingerOn = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  });
+  function fingerOff(e) {  // seen on the document: wherever the finger lifts, and whatever was drawn under it since
+    const f = fingerOn;
+    if (!f || f.id !== e.pointerId) return;
+    fingerOn = null;
+    news.shownAt = Date.now();  // the item held stays its full time once the finger lifts
+    const dx = e.clientX - f.x, dy = e.clientY - f.y;
+    if (e.type === 'pointerup' && Math.abs(dx) > 40 && Math.abs(dx) > 2 * Math.abs(dy)) {
+      swipedAt = performance.now();
+      step(dx < 0 ? 1 : -1);  // swiped left: the next; right: the one before
+    }
+  }
+  document.addEventListener('pointerup', fingerOff, true);
+  document.addEventListener('pointercancel', fingerOff, true);
+  ticker.addEventListener('click', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    const hold = (on) => { news.held = on; news.shownAt = Date.now(); renderTicker(false); };
+    if (tickerBy === 'mouse') {  // as before; only a hold a finger made (a touch screen with a mouse) it lets go too
+      if (news.held && t && t.closest('.src')) hold(false);
+      return;
+    }
+    if (performance.now() - swipedAt < 400) { e.preventDefault(); return; }  // the end of a swipe, not a tap
+    if (!t || t.closest('a.txt')) return;  // the item's link opens
+    if (t.closest('.count')) step(1);
+    else if (t.closest('.src')) hold(!news.held);
+  });
+
   // -- interaction -----------------------------------------------------------------------
-  let dragging = null;
-  function sunHit(e) {
+  // A mouse, a pen or fingers (the user, 2026-11-10: "I want to support touch as well as mouse
+  // clicking on the interface"). One pointer drags the globe round; two fingers pinch it nearer or
+  // further about the point between them and turn it as that point moves, and a finger lifted hands
+  // the drag to the one left, so nothing jumps. A tap finds the sun or a market within a fingertip's
+  // reach (a mouse's hover as before); the market a finger tapped keeps its name on the map until its
+  // next tap (on another market, the sun or the bare globe); two quick taps recentre, as a double click
+  // does. The globe's gestures are its own: a long press there shows no words (touch.js, data-touch-own).
+  canvas.setAttribute('data-touch-own', '');
+  const SUN_REACH = { mouse: 16, finger: 24 }, MARKET_REACH = { mouse: 12, finger: 22 };  // px from the point
+  // px a press moves before it turns the globe: a fingertip (or a pen's) rolls a little in a tap, which Safari still
+  // counts as a tap and clicks; a mouse's 3 px as before
+  const DRAG_SLOP = { mouse: 3, finger: 10 };
+  const pointers = new Map();  // pointerId -> {x, y}: the pointers down on the globe, in the order they went down
+  let dragging = null;  // one pointer turning the globe: {id, x, y, lon, lat, finger, moved}
+  let pinch = null;  // two fingers: {d, x, y}: how far apart they were at the last move, and the point between them
+  let pressedBy = 'mouse';  // what made the last press on the globe: a 'mouse', or a 'finger' (a touch or a pen)
+  let lastTap = null, homedAt = 0;  // a finger's last tap {t, x, y}; when two taps last recentred
+  let justDragged = false;  // the click that ends a drag (or a pinch) is not a click on the sun or a market
+
+  function sunHit(e, reach = SUN_REACH.mouse) {
     if (!markets) return false;
     const g = geometry(), r = canvas.getBoundingClientRect();
     const p = project(markets.sun.lon, markets.sun.lat, g);
-    return p.visible && Math.hypot(p.x - (e.clientX - r.left), p.y - (e.clientY - r.top)) < 16;
+    return p.visible && Math.hypot(p.x - (e.clientX - r.left), p.y - (e.clientY - r.top)) < reach;
   }
-  canvas.addEventListener('pointerdown', (e) => {
-    glide = null;
-    dragging = { x: e.clientX, y: e.clientY, lon: view.lon, lat: view.lat };
-    try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
-  });
-  canvas.addEventListener('pointermove', (e) => {
-    const g = geometry();
-    if (dragging && (dragging.moved || Math.hypot(e.clientX - dragging.x, e.clientY - dragging.y) > 3)) {
-      dragging.moved = true;
-      const k = 90 / g.r;
-      const lon = dragging.lon - (e.clientX - dragging.x) * k;
-      const lat = Math.max(-85, Math.min(85, dragging.lat + (e.clientY - dragging.y) * k));
-      offset = { lon: wrap(lon - subsolar().lon), lat };
-      updateView();
-      draw();
-      return;
-    }
-    if (sunHit(e)) { if (hover) { hover = null; draw(); } canvas.style.cursor = 'pointer'; canvas.title = 'Back to noon'; return; }
-    canvas.title = '';
-    const r = canvas.getBoundingClientRect();
+  // The market nearest the point within `reach` px: under a mouse's hover, or where a finger tapped.
+  function marketAt(e, reach) {
+    const g = geometry(), r = canvas.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
-    let best = null, bestD = 12;
+    let best = null, bestD = reach;
     for (const m of markets?.world || []) {
       const p = project(m.lon, m.lat, g);
       const d = Math.hypot(p.x - x, p.y - y);
       if (p.visible && d < bestD) { best = m; bestD = d; }
     }
-    if (best !== hover) { hover = best; canvas.style.cursor = best ? 'pointer' : 'grab'; draw(); }
-  });
-  let justDragged = false;  // the click that ends a drag is not a click on the sun or a market
-  canvas.addEventListener('pointerup', () => { justDragged = !!dragging?.moved; dragging = null; });
-  canvas.addEventListener('pointercancel', () => { dragging = null; });
-  canvas.addEventListener('dblclick', () => { recentre(); zoom = 1; nightCache = null; zoneCache = null; });
-  // Zoom with the wheel or a trackpad pinch, towards the point under the cursor.
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
+    return best;
+  }
+  // Zoom to `want` (from 1x to the most the outlines hold), turning a little towards the point under
+  // (clientX, clientY) so it stays roughly under it: the wheel's, a trackpad's pinch and two fingers' alike.
+  function zoomAt(clientX, clientY, want) {
     const g = geometry(), r = canvas.getBoundingClientRect();
-    const at = unproject(e.clientX - r.left, e.clientY - r.top, g);
+    const at = unproject(clientX - r.left, clientY - r.top, g);
     const maxZoom = glr && hires ? 150 : 12;  // ~160 m per pixel at 150x: the GSHHG data's detail
-    const next = Math.max(1, Math.min(maxZoom, zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015))));
+    const next = Math.max(1, Math.min(maxZoom, want));
     if (next === zoom) return;
     if (at && next > zoom) {  // turn a little towards the cursor so it stays roughly under it
       const t = 1 - zoom / next;
@@ -1083,17 +1136,126 @@
     }
     zoom = next;
     nightCache = null; zoneCache = null;
+  }
+  function home() { recentre(); zoom = 1; nightCache = null; zoneCache = null; }  // back to noon, the whole globe
+
+  function startPinch() {  // the first two pointers down: a pinch from here, neither a drag nor a tap
+    const [a, b] = pointers.values();
+    pinch = { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    dragging = null;
+    justDragged = true;
+  }
+  function pinchMove(g) {
+    const [a, b] = pointers.values();
+    const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+    const k = 90 / g.r;  // the point between the fingers turns the globe as one finger's drag does
+    offset = { lon: wrap(view.lon - (x - pinch.x) * k - subsolar().lon),
+               lat: Math.max(-85, Math.min(85, view.lat + (y - pinch.y) * k)) };
+    updateView();
+    zoomAt(x, y, zoom * (d / pinch.d));  // nearer as the fingers part, further as they close
+    pinch = { d, x, y };
+    updateView();
+    draw();
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    glide = null;
+    justDragged = false;  // a finger's drag leaves no click behind it: each press starts afresh
+    pressedBy = e.pointerType === 'mouse' ? 'mouse' : 'finger';
+    if (e.isPrimary) { pointers.clear(); pinch = null; }  // the first of its kind down: none other is (one missed lifting)
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    if (pointers.size === 2) startPinch();
+    else if (pointers.size === 1) {
+      dragging = { id: e.pointerId, x: e.clientX, y: e.clientY, lon: view.lon, lat: view.lat, finger: pressedBy === 'finger' };
+    }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    const g = geometry();
+    const at = pointers.get(e.pointerId);
+    if (at) { at.x = e.clientX; at.y = e.clientY; }
+    if (pinch) { if (at) pinchMove(g); return; }
+    if (dragging && dragging.id === e.pointerId
+        && (dragging.moved || Math.hypot(e.clientX - dragging.x, e.clientY - dragging.y) > DRAG_SLOP[dragging.finger ? 'finger' : 'mouse'])) {
+      // a finger's turn starts from where it left its slop, so the globe does not jump by it (a mouse's as before)
+      if (!dragging.moved && dragging.finger) Object.assign(dragging, { x: e.clientX, y: e.clientY, lon: view.lon, lat: view.lat });
+      dragging.moved = true;
+      const k = 90 / g.r;
+      const lon = dragging.lon - (e.clientX - dragging.x) * k;
+      const lat = Math.max(-85, Math.min(85, dragging.lat + (e.clientY - dragging.y) * k));
+      offset = { lon: wrap(lon - subsolar().lon), lat };
+      updateView();
+      draw();
+      return;
+    }
+    if (e.pointerType === 'touch') return;  // a finger hovers nothing: what it taps is found where it taps
+    if (sunHit(e)) { if (hover) { hover = null; draw(); } canvas.style.cursor = 'pointer'; canvas.title = 'Back to noon'; return; }
+    canvas.title = '';
+    const best = marketAt(e, MARKET_REACH.mouse);
+    if (best !== hover) { hover = best; canvas.style.cursor = best ? 'pointer' : 'grab'; draw(); }
+  });
+  function lifted(e) {
+    if (!pointers.delete(e.pointerId)) return;  // not down here, or seen already (its capture lost after its lift)
+    if (pinch) {
+      if (pointers.size >= 2) { startPinch(); return; }  // a third finger was down: the pinch goes on with two
+      pinch = null;
+      const [id, p] = [...pointers][0] || [];  // the finger left turns the globe on from where it is
+      dragging = p ? { id, x: p.x, y: p.y, lon: view.lon, lat: view.lat, finger: true, moved: true } : null;
+      justDragged = true;
+      return;
+    }
+    if (!dragging || dragging.id !== e.pointerId) return;
+    justDragged = e.type === 'pointerup' && !!dragging.moved;
+    dragging = null;
+  }
+  canvas.addEventListener('pointerup', lifted);
+  canvas.addEventListener('pointercancel', lifted);
+  canvas.addEventListener('lostpointercapture', lifted);
+  // a finger held on the globe is turning or about to: no browser menu opens under it (a mouse's right click as before)
+  canvas.addEventListener('contextmenu', (e) => {
+    if (e.pointerType ? e.pointerType !== 'mouse' : pressedBy === 'finger') e.preventDefault();
+  });
+  // Two taps of a finger close together in time and place: back to noon and the whole globe, as a
+  // double click (whether a browser makes a dblclick of two taps on the globe is not sure).
+  function twoTaps(e) {
+    const t = performance.now(), last = lastTap;
+    lastTap = { t, x: e.clientX, y: e.clientY };
+    if (!last || t - last.t > 350 || Math.hypot(e.clientX - last.x, e.clientY - last.y) > 30) return false;
+    lastTap = null;
+    homedAt = t;
+    home();
+    return true;
+  }
+  canvas.addEventListener('dblclick', () => {
+    if (homedAt && performance.now() - homedAt < 600) return;  // the two taps did it already
+    home();
+  });
+  // Zoom with the wheel or a trackpad pinch, towards the point under the cursor.
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
   }, { passive: false });
+  // The list scrolled to a row within itself only: on a narrow screen it sits under the globe, and the page stays put.
+  function listTo(row) {
+    const lr = list.getBoundingClientRect(), rr = row.getBoundingClientRect();
+    list.scrollTo({ top: list.scrollTop + rr.top - lr.top - (list.clientHeight - rr.height) / 2, behavior: 'smooth' });
+  }
   canvas.addEventListener('click', (e) => {
     if (justDragged) { justDragged = false; return; }
-    if (sunHit(e)) { recentre(); return; }
+    const finger = pressedBy === 'finger';
+    if (finger && twoTaps(e)) return;
+    if (sunHit(e, SUN_REACH[pressedBy])) { if (finger) hover = null; recentre(); return; }
+    if (finger) { hover = marketAt(e, MARKET_REACH.finger); draw(); }  // named on the map until the next tap
     if (!hover) return;
     const row = list.querySelector(`[data-code="${CSS.escape(String(hover.code))}"]`);
-    if (row) { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 1200); }
+    if (!row) return;
+    if (finger) listTo(row); else row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 1200);
   });
   info.addEventListener('click', (e) => {
-    if (e.target.id === 'globeNoon') { e.preventDefault(); recentre(); zoom = 1; nightCache = null; zoneCache = null; }
+    if (e.target.id === 'globeNoon') { e.preventDefault(); home(); }
   });
+  // (The ways under the globe are worded for a mouse and for a finger in index.html: .mouse-only, .touch-only.)
 
   // Animate while visible: the Earth turning, pulses, countdowns every second; market states
   // are re-fetched every 30 s.

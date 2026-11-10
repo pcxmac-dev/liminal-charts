@@ -19,6 +19,12 @@
   const MAP_EQUAL = 400;  // a list up to this many: equal tiles; longer: by dollar volume
   const MAP_REDRAW_MS = 15000;  // the map drawn again with the activity polls at most this often
   let mapDrawn = 0;
+  // Touch screens and the on-screen keyboard (the user, 2026-11-10: "I want to support touch as well as mouse clicking
+  // on the interface"; "Support for virtual keyboard on tablets and phones"): each field's keyboard (the library's
+  // touch.js), and the add box focused by the page only for a mouse or a keyboard (a finger's keyboard comes up when
+  // the finger taps the box).
+  const kb = (kind, more) => window.LiminalTouch?.keyboard(kind, more) || '';
+  const focusBox = (el) => (window.LiminalTouch ? window.LiminalTouch.autofocus(el) : el.focus());
 
   const shown = () => document.body.dataset.pane === 'watchlist';
 
@@ -41,16 +47,27 @@
   // One save at a time, each sending the lists as they are when it goes: two at once could reach the
   // server in either order, the older undoing the newer. The server's copy is taken only from the last
   // save waiting (an earlier answer lacks the changes still to go).
+  // Each save draws the panel again once nothing presses on it (panels.js Views): a row gone moves the rows below it
+  // up, and under a finger the next symbol's − would take its tap. What waits on that drawing (`after`: the add box's
+  // focus back) runs after it, whichever redraw comes first.
   let saving = Promise.resolve();
   let waiting = 0;
-  function save() {
+  let afterDraw = null;
+  function draw() {
+    render();
+    const waited = afterDraw;
+    afterDraw = null;
+    if (waited) waited();
+  }
+  function save(after) {
     waiting += 1;
     saving = saving.then(async () => {
       try {
         const res = await apiWrite('PUT', '/api/watchlists', { lists });
         if (waiting === 1) lists = res.lists;
       } catch (err) { showError(err); } finally { waiting -= 1; }
-      render();
+      if (after) afterDraw = after;
+      window.Views.redraw($('pWatch'), draw);
     });
     return saving;
   }
@@ -90,7 +107,8 @@
   }
 
   // A row: − at its left, shown while the pointer is on the row (the user, 2026-10-31: "lets keep the
-  // minuses under the arrow", "Hidden until hover"), the symbol, its last price, change and volume.
+  // minuses under the arrow", "Hidden until hover"), the symbol, its last price, change and volume. On a touch
+  // screen the − is always shown, a finger's size (the user, 2026-11-10; views-touch.css).
   function row(entry) {
     const { sym, q } = entry;
     const on = sym.ticker === state.ticker;
@@ -115,10 +133,10 @@
 
   function renderMap(box, head, syms, empty) {
     const M = window.MarketMap;
+    const body = frame(box, head);  // the head as it stands (its fields kept), the map below it
     if (!syms.length) {  // no blank map: why it is empty, and the market's map to pick from
-      box.innerHTML = `${head}<div class="w-map-empty p-muted">${esc(empty)}
+      body.innerHTML = `<div class="w-map-empty p-muted">${esc(empty)}
         <button type="button" id="watchPick" title="The symbol picker's map: every Nasdaq and NYSE company by exchange and sector">Pick from the market map</button></div>`;
-      $('watchList').value = current;
       mapDrawn = Date.now();
       return;
     }
@@ -130,16 +148,62 @@
     const volumes = items.map((s) => s.dollarVolume).filter((v) => v > 0).sort((a, b) => a - b);
     const median = volumes.length ? volumes[Math.floor(volumes.length / 2)] : 1;
     const size = items.length <= MAP_EQUAL ? () => 1 : (s) => (s.asset === 'stock' ? s.dollarVolume || 0 : median);
-    box.innerHTML = `${head}<div id="watchMap" class="market-map watch-map" role="listbox" aria-label="Watchlist map"></div>
+    body.innerHTML = `<div id="watchMap" class="market-map watch-map" role="listbox" aria-label="Watchlist map"></div>
       <div class="map-foot"><span class="map-legend">${[-3, -1, 0, 1, 3].map((p) => `<span style="background:${M.changeColor(p)}">${p > 0 ? '+' : ''}${p}%</span>`).join('')}</span>
         <span class="p-muted small">${items.length.toLocaleString()} · ${items.length <= MAP_EQUAL ? 'equal tiles' : 'stocks by dollar volume'} · by sector</span></div>`;
-    $('watchList').value = current;
     const el = $('watchMap');
     if (el.clientWidth) M.render(el, items, { current: state.ticker, levels: [(s) => s.sector, (s) => s.industry], size });
     mapDrawn = Date.now();
   }
 
-  let shownHead = null;  // the panel's head (list, sort, filter) as last drawn
+  // The panel's head (the list picker, Map or List, +, 🗑, the add box and the filter) is drawn when what it holds
+  // changes (the view, the add box opened or closed), else brought up to date in place: its fields are never
+  // replaced, so the filter as it is typed draws only what it filters, an on-screen keyboard is not closed nor its
+  // word cut. What follows it (the table or the map) is the part frame() returns, drawn as the list changes.
+  let shownHead = null;  // what the head was drawn for (the view, the add box), null: drawn again
+  let headOptions = '', optionsDrawn = '';  // the list picker's options, as wanted and as drawn
+  let shownTable = null;  // the table's head (its sort) as drawn
+  function frame(box, head) {
+    const key = `${view}|${adding}`;
+    let body = box.querySelector(':scope > .w-body');
+    const mine = shownList();
+    if (shownHead !== key || !body || !$('watchFilter')) {
+      box.innerHTML = `${head}<div class="w-body"></div>`;
+      shownHead = key;
+      optionsDrawn = headOptions;
+      body = box.querySelector(':scope > .w-body');
+      if (adding) openAdd(false);
+    } else {
+      if (optionsDrawn !== headOptions) { $('watchList').innerHTML = headOptions; optionsDrawn = headOptions; }
+      if ($('watchAdd')) $('watchAdd').title = `Add a symbol to ${mine.name}`;
+      if (adding) fillAdd();  // the hits marked again (✓ once on the list); the box and what is typed in it as they are
+    }
+    $('watchList').value = mine.name;
+    return body;
+  }
+
+  // The rows as they stand brought up to date, each cell's contents and classes where they changed, the row itself
+  // kept: a tap on it lands, a finger's fling over the list goes on. False when the rows are not the same symbols in
+  // the same order (the body is then drawn again).
+  function updateRows(table, entries) {
+    const rows = [...table.querySelectorAll('tbody tr[data-ticker]')];
+    if (!entries.length || rows.length !== entries.length || rows.some((r, i) => r.dataset.ticker !== entries[i].sym.ticker)) return false;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = `<table><tbody>${entries.map(row).join('')}</tbody></table>`;
+    const fresh = tpl.content.querySelectorAll('tbody tr');
+    rows.forEach((r, i) => {
+      const n = fresh[i];
+      if (!n) return;
+      for (const a of ['class', 'title']) if (r.getAttribute(a) !== n.getAttribute(a)) r.setAttribute(a, n.getAttribute(a) || '');
+      [...n.cells].forEach((c, j) => {
+        const d = r.cells[j];
+        if (!d) return;
+        if (d.className !== c.className) d.className = c.className;
+        if (d.innerHTML !== c.innerHTML) d.innerHTML = c.innerHTML;
+      });
+    });
+    return true;
+  }
 
   // Adding and removing, TradingView's way (the user, 2026-10-31: "i need away to add and get rid of
   // watchlist items", "lets use the tradingview way", "a plus at the top and minus next to each entry"):
@@ -158,18 +222,22 @@
       .sort((a, b) => a[0] - b[0] || a[1].ticker.localeCompare(b[1].ticker)).slice(0, 30).map(([, s]) => s);
   }
 
+  let addDrawn = null;  // the add list's hits as drawn
   function fillAdd() {
     const list = document.querySelector('#pWatch .w-addlist');
     if (!list) return;
     const mine = shownList();
     const hits = addHits();
-    list.innerHTML = hits.length ? hits.map((s) => {
+    const html = hits.length ? hits.map((s) => {
       const has = mine.tickers.includes(s.ticker);
       return `<button type="button" class="w-add-hit" data-add="${esc(s.ticker)}"${has ? ' disabled' : ''}
           title="${esc(has ? `${s.ticker} is on ${mine.name}` : `Add ${s.ticker} to ${mine.name}`)}">
         ${symbolIcon(s, 16)}<b>${esc(s.ticker)}</b><span class="w-add-name">${esc(s.name || '')}</span>
         <span class="w-ex">${esc(s.exchange || s.asset || '')}</span><span class="w-add-mark">${has ? '✓' : '+'}</span></button>`;
     }).join('') : `<div class="p-muted small w-add-hint">${addQuery.trim() ? 'No symbol collected here matches.' : 'Type a ticker or a company name.'}</div>`;
+    if (list.firstChild && html === addDrawn) return;  // as it was: its hits left as they are (a tap on one lands)
+    list.innerHTML = html;
+    addDrawn = html;
   }
 
   function openAdd(focus = true) {
@@ -177,21 +245,26 @@
     if (!input) return;
     input.value = addQuery;
     fillAdd();
-    if (focus) input.focus();
+    if (focus) focusBox(input);  // a mouse's or a keyboard's +: ready to type in; a finger taps the box for its keyboard
   }
 
   function addSymbol(ticker) {
     const mine = shownList();
     if (!mine.tickers.includes(ticker)) mine.tickers.push(ticker);
     prefs.set('watchlist', current);
-    shownHead = null;  // drawn whole: the search still open
-    return save();
+    // drawn in place, the search still open; a hit clicked took the focus and is drawn again: the box gets it back
+    // (a mouse's; a finger's keyboard stays down)
+    return save(() => {
+      const input = $('watchAddInput');
+      if (adding && input && (!document.activeElement || document.activeElement === document.body)) focusBox(input);
+    });
   }
 
   const addHead = (mine) => `<button type="button" id="watchAdd" aria-expanded="${adding}"
       title="${esc(`Add a symbol to ${mine.name}`)}">+</button>`;
   const addBox = () => (adding ? `<div class="w-addbox"><input id="watchAddInput" type="search" placeholder="Add a symbol: ticker or company"
-      autocomplete="off" spellcheck="false" aria-label="Add a symbol"><div class="w-addlist" role="listbox"></div></div>` : '');
+      aria-label="Add a symbol" ${kb('ticker')}><div class="w-addlist" role="listbox"></div></div>` : '');
+  const filterBox = () => `<input id="watchFilter" type="search" placeholder="Filter symbols" aria-label="Filter symbols" value="${esc(query)}" ${kb('search')}>`;
 
   function render() {
     if (!shown()) return;
@@ -203,6 +276,7 @@
     const th = (key, label, cls = '') => `<th class="${cls}" data-sort="${key}">${label}${sort.key === key ? (sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
     const options = [...lists.map((l) => `<option value="${esc(l.name)}">${esc(l.name)} (${l.tickers.length})</option>`),
       '<option value="__new__">New list…</option>'].join('');
+    headOptions = options;
     const toggle = `<button type="button" id="watchView" title="${view === 'map' ? 'Show the list as a table' : 'Show the list as a heat map, by sector'}"
       aria-pressed="${view === 'map'}">${view === 'map' ? 'List' : 'Map'}</button>`;
     const empty = !mine.tickers.length ? 'Empty: press + to add a symbol.'
@@ -211,11 +285,9 @@
       const syms = mine.tickers.map((t) => bySym.get(t)).filter(Boolean);
       const head = `<h3 class="w-head">Watchlist <select id="watchList" aria-label="Watchlist">${options}</select>${toggle}
           ${addHead(mine)}</h3>${addBox()}
-        <input id="watchFilter" type="search" placeholder="Filter symbols" value="${esc(query)}" autocomplete="off">`;
-      shownHead = null;  // the table is drawn whole when it comes back
+        ${filterBox()}`;
       // an empty list (the user, 2026-10-29: "even empty watch list"): said as the table says it
       renderMap(box, head, syms.filter(match), empty);
-      if (adding) openAdd(false);
       return;
     }
     const entries = mine.tickers.map((t) => bySym.get(t)).filter((s) => s && match(s)).map((sym) => ({ sym, q: quote(sym) }));
@@ -225,32 +297,29 @@
     const head = `<h3 class="w-head">Watchlist
         <select id="watchList" aria-label="Watchlist">${options}</select>${toggle}
         ${addHead(mine)}<button type="button" id="watchDelete" title="Delete this list">🗑</button></h3>${addBox()}
-      <input id="watchFilter" type="search" placeholder="Filter symbols" value="${esc(query)}" autocomplete="off">
-      <div class="table-wrap w-wrap"><table class="w-table">
-        <thead><tr><th class="w-x"></th>${th('symbol', 'Symbol')}${th('last', 'Last', 'num')}${th('pct', 'Chg%', 'num')}${th('vol', 'Vol', 'num')}</tr></thead>`;
-    const table = box.querySelector('.w-table');
-    if (table && shownHead === head) {  // the same list, sort and filter: new rows only
-      table.querySelectorAll('tbody').forEach((t) => t.remove());
-      table.insertAdjacentHTML('beforeend', body);
+      ${filterBox()}`;
+    const thead = `<thead><tr><th class="w-x"></th>${th('symbol', 'Symbol')}${th('last', 'Last', 'num')}${th('pct', 'Chg%', 'num')}${th('vol', 'Vol', 'num')}</tr></thead>`;
+    const host = frame(box, head);
+    const table = host.querySelector('.w-table');
+    if (!table || shownTable !== thead) {  // back from the map, or sorted otherwise: the table drawn whole
+      host.innerHTML = `<div class="table-wrap w-wrap"><table class="w-table">${thead}${body}</table></div>`;
+      shownTable = thead;
       return;
     }
-    shownHead = head;
-    box.innerHTML = `${head}${body}</table></div>`;
-    $('watchList').value = mine.name;
-    if (adding) openAdd(document.activeElement === document.body || !document.activeElement);
+    if (updateRows(table, entries)) return;  // the same rows: their prices, changes and live dots in place
+    const wrap = host.querySelector('.w-wrap'), top = wrap?.scrollTop;  // rows came or went: the body drawn again
+    table.querySelectorAll('tbody').forEach((t) => t.remove());
+    table.insertAdjacentHTML('beforeend', body);
+    if (wrap && wrap.scrollTop !== top) wrap.scrollTop = top;
   }
 
-  // A light refresh of prices without losing the filter's focus.
+  // A light refresh of prices: the rows in place, never under a finger (a tap on one lands) nor while a finger's
+  // scroll moves (panels.js Views), the filter and the add box left as they are.
   function refresh() {
     if (!shown()) return;
     if (document.activeElement?.id === 'watchAddInput') return;  // searching to add: the prices wait
     if (view === 'map' && Date.now() - mapDrawn < MAP_REDRAW_MS && document.activeElement?.id !== 'watchFilter') return;
-    const focused = document.activeElement?.id === 'watchFilter';
-    const at = focused ? $('watchFilter').selectionStart : null;
-    const scroll = document.querySelector('#pWatch .w-wrap')?.scrollTop;
-    render();
-    if (scroll != null) { const w = document.querySelector('#pWatch .w-wrap'); if (w) w.scrollTop = scroll; }
-    if (focused) { const f = $('watchFilter'); f.focus(); f.setSelectionRange(at, at); }
+    window.Views.redraw($('pWatch'), draw);
   }
 
   $('pWatch').addEventListener('input', (e) => {
@@ -325,6 +394,10 @@
   });
 
   $('pWatch').addEventListener('keydown', (e) => {
+    if (e.target.id === 'watchFilter') {  // an on-screen keyboard's Search: put away, so the rows it found show
+      if (e.key === 'Enter' && window.Views.softKeyboard()) e.target.blur();
+      return;
+    }
     if (e.target.id !== 'watchAddInput') return;
     if (e.key === 'Escape') {
       e.stopPropagation();

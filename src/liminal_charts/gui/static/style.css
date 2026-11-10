@@ -78,18 +78,18 @@ body.light .kv dd, body.light .act-table td { color: var(--text); }
 .act-table.audits td { vertical-align: middle; }
 
 /* Market map in the symbol switcher */
-dialog.switcher.map-view { width: min(1500px, 98vw); max-height: 92vh; }
-dialog.switcher.map-view #symbolList { max-height: calc(92vh - 60px); }
-.market-map { position: relative; height: calc(92vh - 170px); min-height: 320px; background: #1b1e27; border-radius: 4px; overflow: hidden;
+dialog.switcher.map-view { width: min(1500px, 98vw); max-height: 92vh; max-height: 92dvh; }
+dialog.switcher.map-view #symbolList { max-height: calc(92vh - 60px); max-height: calc(92dvh - 60px); }
+.market-map { position: relative; height: calc(92vh - 170px); height: calc(92dvh - 170px); min-height: 320px; background: #1b1e27; border-radius: 4px; overflow: hidden;
   user-select: none; }
 .market-map.strip { height: auto; min-height: 0; }
-.market-map.watch-map { height: calc(100vh - 210px); min-height: 240px; }
+.market-map.watch-map { height: calc(100vh - 210px); height: calc(100dvh - 210px); min-height: 240px; }
 /* the bar over a map: its exchanges, the size measure, the list mapped, priced futures only */
 .map-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 6px; }
 .map-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .map-chip { border: 1px solid var(--border); border-radius: 12px; background: none; color: var(--text); padding: 2px 9px;
   font-size: 12px; cursor: pointer; }
-.map-chip:hover { border-color: var(--accent); }
+@media (hover: hover) { .map-chip:hover { border-color: var(--accent); } }
 .map-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .map-chip.active .p-muted { color: rgba(255,255,255,.8); }
 .map-group select { font-size: 12px; max-width: 220px; }
@@ -105,7 +105,7 @@ dialog.switcher.map-view #symbolList { max-height: calc(92vh - 60px); }
   color: #fff; overflow: hidden; cursor: pointer; outline: 1px solid rgba(13, 15, 20, .55); text-shadow: 0 1px 1px rgba(0,0,0,.35);
   line-height: 1.1; text-align: center; }
 .map-tile b { font-weight: 700; }
-.map-tile:hover { filter: brightness(1.18); z-index: 2; outline: 1px solid #fff; }
+@media (hover: hover) { .map-tile:hover { filter: brightness(1.18); z-index: 2; outline: 1px solid #fff; } }
 .map-tile.current { box-shadow: inset 0 0 0 2px #fff; }
 .map-tile.dim { opacity: .2; }
 .map-tile.unwatched b { opacity: .85; }
@@ -116,10 +116,11 @@ dialog.switcher.map-view #symbolList { max-height: calc(92vh - 60px); }
 .map-pick { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .map-pick .primary { margin: 0; }
 /* A search's matches above the map: tiles in the map's colours (the last session's change) */
-.market-map.searched { height: min(52vh, calc(92vh - 170px)); }
+.market-map.searched { height: min(52vh, calc(92vh - 170px)); height: min(52dvh, calc(92dvh - 170px)); }
 .map-hits { margin-bottom: 4px; }
 .tile-btn.map-hit { background: var(--heat); border-color: transparent; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
-.tile-btn.map-hit:hover, .tile-btn.map-hit:focus-visible { filter: brightness(1.15); border-color: #fff; background: var(--heat); }
+@media (hover: hover) { .tile-btn.map-hit:hover { filter: brightness(1.15); border-color: #fff; background: var(--heat); } }
+.tile-btn.map-hit:focus-visible { filter: brightness(1.15); border-color: #fff; background: var(--heat); }
 .tile-btn.map-hit.current { box-shadow: inset 0 0 0 2px #fff; }
 .map-hit .hit-top { display: flex; align-items: center; gap: 6px; width: 100%; }
 .map-hit .hit-pct { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -143,7 +144,7 @@ button, select, input {
   font: inherit; color: inherit; background: transparent;
   border: 1px solid transparent; border-radius: 4px; padding: 4px 8px; cursor: pointer;
 }
-button:hover, select:hover { background: var(--hover); }
+@media (hover: hover) { button:hover, select:hover { background: var(--hover); } }
 button.active, button.toggle.on { color: var(--accent); background: var(--hover); }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 select { border-color: var(--border); background: var(--panel); }
@@ -171,7 +172,7 @@ body:not([data-pane="analysis"]) .strip:not(:has(> :not([hidden], .analysis-only
 .layout-row .menu-item span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layout-row.current .menu-item { color: var(--accent); }
 .layout-row .del { color: var(--muted); padding: 4px 6px; }
-.layout-row .del:hover { color: var(--down); }
+@media (hover: hover) { .layout-row .del:hover { color: var(--down); } }
 .params { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
 /* a model's settings only for a model that has them: the price shows none (its display: flex had kept
    them on screen; the user, 2026-10-31: "convert this to just model : 'price' no other info") */
@@ -184,7 +185,7 @@ body:not([data-pane="analysis"]) .strip:not(:has(> :not([hidden], .analysis-only
 
 .menu { position: relative; }
 .dropdown {
-  position: absolute; top: 100%; left: 0; z-index: 10; min-width: 220px; max-height: 70vh; overflow: auto;
+  position: absolute; top: 100%; left: 0; z-index: 10; min-width: 220px; max-height: 70vh; max-height: 70dvh; overflow: auto;
   background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
 }
@@ -197,7 +198,7 @@ body:not([data-pane="analysis"]) .strip:not(:has(> :not([hidden], .analysis-only
 .draw-toast[hidden] { display: none; }
 .dropdown h4 { margin: 6px 6px 2px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .dropdown label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
-.dropdown label:hover { background: var(--hover); }
+@media (hover: hover) { .dropdown label:hover { background: var(--hover); } }
 
 main { flex: 1; display: flex; min-height: 0; gap: var(--gap); padding: var(--gap); }
 #tools {  /* as tall as its tools, not the page */
@@ -214,7 +215,8 @@ main { flex: 1; display: flex; min-height: 0; gap: var(--gap); padding: var(--ga
 /* the handle is the gap between the chart and the panel */
 #panelResizer { width: var(--gap); margin: 0 calc(-1 * var(--gap)); cursor: col-resize; background: transparent; flex: none;
   border-radius: 3px; position: relative; z-index: 2; }
-#panelResizer:hover, #panelResizer.dragging, #panelResizer:focus-visible { background: var(--accent); outline: none; }
+@media (hover: hover) { #panelResizer:hover { background: var(--accent); outline: none; } }
+#panelResizer.dragging, #panelResizer:focus-visible { background: var(--accent); outline: none; }
 #sidePanel {  /* its sections are the panels */
   width: var(--panel-w, 320px); flex: none; overflow-y: auto; font-size: 12px; line-height: 1.45;
 }
@@ -243,7 +245,7 @@ body.panel-hidden #sidePanel, body.panel-hidden #panelResizer { display: none; }
 .kv dd small { color: var(--muted); }
 .auto-level { font-size: 12px; color: var(--text); padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px;
   white-space: nowrap; cursor: pointer; }
-.auto-level:hover { border-color: var(--accent); }
+@media (hover: hover) { .auto-level:hover { border-color: var(--accent); } }
 /* overridden: the zoom goes on to seconds where the data has only minutes (app.js toggleAutoOverride) */
 .auto-level.override { border-style: dashed; border-color: #f0a030; }
 /* ... and below the data's sampling now: the minutes drawn wide among the seconds */
@@ -287,16 +289,17 @@ body.panel-hidden #sidePanel, body.panel-hidden #panelResizer { display: none; }
 #error { color: var(--down); overflow: hidden; text-overflow: ellipsis; }
 
 dialog {
-  width: min(560px, 92vw); max-height: 80vh; padding: 0; overflow: hidden;
+  width: min(560px, 92vw); max-height: 80vh; max-height: 80dvh; padding: 0; overflow: hidden;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
 }
 dialog::backdrop { background: rgba(0, 0, 0, .5); }
 .dialog-head { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--border); }
 .dialog-head input { flex: 1; border-color: var(--border); background: var(--bg); padding: 8px 10px; cursor: text; }
-#symbolList { max-height: calc(80vh - 60px); overflow-y: auto; padding: 4px 0; }
+#symbolList { max-height: calc(80vh - 60px); max-height: calc(80dvh - 60px); overflow-y: auto; padding: 4px 0; }
 #symbolList h4 { margin: 10px 14px 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .sym-row { display: flex; align-items: center; gap: 10px; padding: 6px 14px; cursor: pointer; }
-.sym-row:hover, .sym-row.focus { background: var(--hover); }
+@media (hover: hover) { .sym-row:hover { background: var(--hover); } }
+.sym-row.focus { background: var(--hover); }
 .sym-row .tk { font-weight: 600; min-width: 64px; }
 .sym-row .nm { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip { font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); }
@@ -346,7 +349,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .5); }
   background: var(--card); border-radius: var(--radius); flex: none; overflow-y: auto; }
 #rail button { position: relative; width: 46px; height: 46px; padding: 0; display: grid; place-items: center;
   color: var(--muted); border-radius: 7px; }
-#rail button:hover { color: var(--text); }
+@media (hover: hover) { #rail button:hover { color: var(--text); } }
 #rail button.active { background: var(--hover); color: var(--accent); }
 #rail button.active::before { content: ""; position: absolute; left: -4px; top: 10px; bottom: 10px; width: 2px;
   border-radius: 1px; background: var(--accent); }
@@ -367,7 +370,8 @@ body.login-page { display: grid; place-items: center; min-height: 100%; backgrou
 .login-profiles { display: flex; flex-direction: column; gap: 6px; margin: 16px 0 12px; text-align: left; }
 .login-profile { display: grid; grid-template-columns: 32px 1fr; grid-template-rows: auto auto; column-gap: 10px;
   align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; text-align: left; }
-.login-profile:hover, .login-profile.current { border-color: var(--accent); background: var(--hover); }
+@media (hover: hover) { .login-profile:hover { border-color: var(--accent); background: var(--hover); } }
+.login-profile.current { border-color: var(--accent); background: var(--hover); }
 .login-avatar { grid-row: span 2; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
   background: var(--accent); color: #fff; font-weight: 600; }
 .login-name { font-weight: 600; overflow-wrap: anywhere; }
@@ -392,13 +396,13 @@ body.login-page { display: grid; place-items: center; min-height: 100%; backgrou
 .pane[hidden] { display: none; }
 .small { font-size: 11px; }
 button.primary { background: var(--accent); color: #fff; margin: 8px 0 4px; display: inline-flex; align-items: center; gap: 6px; }
-button.primary:hover { filter: brightness(1.1); background: var(--accent); }
+@media (hover: hover) { button.primary:hover { filter: brightness(1.1); background: var(--accent); } }
 button.primary[disabled] { opacity: .5; cursor: default; }
 .sym-list { list-style: none; margin: 0; padding: 0; }
 .sym-list li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .sym-list li .p-muted { flex: 1; }
 .sym-list li.has-data { cursor: pointer; }
-.sym-list li.has-data:hover b { color: var(--accent); }
+@media (hover: hover) { .sym-list li.has-data:hover b { color: var(--accent); } }
 .rec { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--muted); opacity: .5; }
 .rec.on { background: var(--down); opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
 .feed-table { width: 100%; border-collapse: collapse; }
@@ -422,7 +426,7 @@ button.primary[disabled] { opacity: .5; cursor: default; }
   justify-content: center; gap: 4px; padding: 0 6px; font-size: 11px; line-height: 1; color: var(--text);
   background: var(--panel); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
 .axis-btn::after { content: "\25BE"; font-size: 9px; color: var(--muted); }
-.axis-btn:hover { background: var(--hover); }
+@media (hover: hover) { .axis-btn:hover { background: var(--hover); } }
 .axis-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 .axis-btn[hidden] { display: none; }
 .tz-btn { right: 0; }
@@ -439,7 +443,7 @@ button.primary[disabled] { opacity: .5; cursor: default; }
 .tz-menu button, .sess-menu button { display: grid; grid-template-columns: 9ch 1fr auto; gap: 10px; text-align: left; font: inherit; font-size: 12px;
   color: var(--text); background: transparent; border: 0; border-radius: 4px; padding: 5px 8px; cursor: pointer; }
 .tz-menu .tz-city, .sess-menu .tz-city { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tz-menu button:hover, .sess-menu button:hover { background: rgba(120,123,134,0.15); }
+@media (hover: hover) { .tz-menu button:hover, .sess-menu button:hover { background: rgba(120,123,134,0.15); } }
 .tz-menu button.on, .sess-menu button.on { color: #2962ff; }
 .sess-menu button { grid-template-columns: 7ch 1fr; }
 .cursor-box { position: absolute; z-index: 3; pointer-events: none; font-size: 11px; line-height: 1.5;
@@ -447,13 +451,14 @@ button.primary[disabled] { opacity: .5; cursor: default; }
   background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
 
 /* app switcher */
-dialog.switcher { width: min(980px, 96vw); max-height: 86vh; }
+dialog.switcher { width: min(980px, 96vw); max-height: 86vh; max-height: 86dvh; }
 #sortBtn { border-color: var(--border); white-space: nowrap; }
-dialog.switcher #symbolList { max-height: calc(86vh - 60px); padding: 4px 12px 12px; }
+dialog.switcher #symbolList { max-height: calc(86vh - 60px); max-height: calc(86dvh - 60px); padding: 4px 12px 12px; }
 .tiles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; }
 .tile-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; text-align: left;
   border: 1px solid var(--border); border-radius: 8px; background: var(--bg); min-width: 0; }
-.tile-btn:hover, .tile-btn:focus-visible { border-color: var(--accent); background: var(--hover); outline: none; }
+@media (hover: hover) { .tile-btn:hover { border-color: var(--accent); background: var(--hover); outline: none; } }
+.tile-btn:focus-visible { border-color: var(--accent); background: var(--hover); outline: none; }
 .tile-btn.current { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .tile-top { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; margin-bottom: 2px; }
 .tile-tk { font-size: 14px; }
@@ -465,9 +470,9 @@ dialog.switcher #symbolList { max-height: calc(86vh - 60px); padding: 4px 12px 1
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }
 .dot.on { background: var(--up); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
-dialog.wide { width: min(1100px, 96vw); max-height: 90vh; }
+dialog.wide { width: min(1100px, 96vw); max-height: 90vh; max-height: 90dvh; }
 .act-status { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0; }
-.act-body { max-height: calc(90vh - 56px); overflow-y: auto; padding: 4px 14px 14px; }
+.act-body { max-height: calc(90vh - 56px); max-height: calc(90dvh - 56px); overflow-y: auto; padding: 4px 14px 14px; }
 .act-body h4 { margin: 16px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 10px; }
 .tile { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: var(--bg); }
@@ -498,7 +503,7 @@ dialog.wide { width: min(1100px, 96vw); max-height: 90vh; }
 .act-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: break-word; }
 .act-table tr:last-child td { border-bottom: 0; }
 .act-table tr.has-data { cursor: pointer; }
-.act-table tr.has-data:hover td { background: var(--hover); }
+@media (hover: hover) { .act-table tr.has-data:hover td { background: var(--hover); } }
 .act-table .num { text-align: right; white-space: nowrap; }
 .act-table .prog { min-width: 180px; }
 .act-table .sub { color: var(--muted); font-size: 11px; }
@@ -537,11 +542,6 @@ body.light { --st-new: #00838f; --st-wait: #a85d00; --st-queued: #5e35b1; --st-b
 .act-log .good { color: var(--up); }
 .act-log .bad { color: var(--down); }
 
-@media (max-width: 640px) {
-  #tools { display: none; }
-  #topbar .symbol { min-width: 0; }
-}
-
 /* main-window views (switched by the rail) */
 main > .view { flex: 1; min-width: 0; min-height: 0; display: flex; gap: var(--gap); }
 main > .view:not(#viewChart) { background: var(--card); border-radius: var(--radius); }
@@ -572,7 +572,7 @@ main > .view[hidden] { display: none; }
 .mk-main { flex: 1; min-width: 0; }
 .mk-when { text-align: right; color: var(--muted); white-space: nowrap; }
 .mk-hol { color: #f0a020; }
-@media (max-width: 900px) { #viewMarkets { flex-direction: column; } .markets-list { width: auto; max-height: 45vh; border-left: 0; border-top: 1px solid var(--border); } }
+@media (max-width: 900px) { #viewMarkets { flex-direction: column; } .markets-list { width: auto; max-height: 45vh; max-height: 45dvh; border-left: 0; border-top: 1px solid var(--border); } }
 
 /* status bar: what is being fetched, like a browser's */
 .net-status { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: var(--text); }
@@ -583,7 +583,7 @@ main > .view[hidden] { display: none; }
 .w-more td { color: var(--accent); cursor: pointer; text-align: center; font-size: 12px; padding: 6px; }
 .net-pause { font-size: 11px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 4px; background: none;
   color: var(--muted); cursor: pointer; white-space: nowrap; }
-.net-pause:hover { color: var(--text); }
+@media (hover: hover) { .net-pause:hover { color: var(--text); } }
 .net-pause.on { color: #fff; background: var(--accent); border-color: var(--accent); }
 .view-actions { display: flex; align-items: center; gap: 8px; }
 .view-actions .net-pause { font-size: 12px; padding: 5px 12px; }  /* Pause fetching and Halt, in the Fetcher view */
@@ -607,7 +607,7 @@ main > .view[hidden] { display: none; }
   border: 1px solid rgba(240,185,11,.45); border-radius: 3px; padding: 0 5px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .news-ticker .txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .news-ticker a.txt { color: var(--text); text-decoration: none; }
-.news-ticker a.txt:hover { text-decoration: underline; }
+@media (hover: hover) { .news-ticker a.txt:hover { text-decoration: underline; } }
 .news-ticker .when { flex: none; color: var(--muted); font-size: 11px; }
 .news-ticker .count { flex: none; color: var(--muted); font-size: 10px; }
 .news-ticker .item { display: contents; }
@@ -628,7 +628,7 @@ main > .view[hidden] { display: none; }
 /* the cards' rule links: the accent mixed toward the text colour, readable on dark and light cards
    alike (the browser's own blue, and the bare accent, were too dark on the dark card) */
 .gov-param a, .gov-sources a, .pl-view .ex-side a { color: color-mix(in srgb, var(--accent) 55%, var(--text)); text-decoration: none; }
-.gov-param a:hover, .gov-sources a:hover, .pl-view .ex-side a:hover { text-decoration: underline; }
+@media (hover: hover) { .gov-param a:hover, .gov-sources a:hover, .pl-view .ex-side a:hover { text-decoration: underline; } }
 .gov-list .src.gov-src { color: var(--text); }
 .gov-note { margin: 6px 0; flex: none; }
 table.gov-sources { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -664,7 +664,7 @@ svg.spark path { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-li
 .news-row.event .src { color: var(--accent); }
 .news-main { flex: 1; min-width: 0; }
 .news-main > a, .news-main > span { color: var(--text); text-decoration: none; font-size: 13px; }
-.news-main > a:hover { text-decoration: underline; }
+@media (hover: hover) { .news-main > a:hover { text-decoration: underline; } }
 .news-main .small a { color: var(--accent); text-decoration: none; }
 .news-main .tk { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
 #newsSearch { border-color: var(--border); background: var(--bg); cursor: text; }
@@ -680,7 +680,7 @@ svg.spark path { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-li
 .tile-btn.dir.watched { cursor: pointer; }
 .tile-btn.dir:not(.watched) .tile-tk, .tile-btn.dir:not(.watched) .tile-px { opacity: .75; }
 .watch-btn { font-size: 10px; padding: 1px 6px; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; }
-.watch-btn:hover { background: var(--accent); color: #fff; }
+@media (hover: hover) { .watch-btn:hover { background: var(--accent); color: #fff; } }
 
 /* space behind the globe: halfway between the app background (#131722) and black */
 body:not(.light) #viewMarkets { background: #0a0c11; }
@@ -708,7 +708,8 @@ body.light { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #
 .ds-list { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; }
 .ds-item { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px; border: 0; border-bottom: 1px solid var(--border);
   border-radius: 0; text-align: left; cursor: pointer; }
-.ds-item:hover, .ds-item.on { background: var(--hover); }
+@media (hover: hover) { .ds-item:hover { background: var(--hover); } }
+.ds-item.on { background: var(--hover); }
 .ds-item input { margin: 0; }
 .ds-item .ds-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds-item small { color: var(--muted); font-size: 11px; white-space: nowrap; }
@@ -718,7 +719,7 @@ button.ds-item.on { box-shadow: inset 3px 0 0 var(--accent); }
 .ds-main.loading { opacity: .55; }
 .ds-legend { display: flex; flex-wrap: wrap; gap: 4px 6px; font-size: 12px; min-height: 18px; margin-bottom: 4px; flex: none; }
 .ds-legend-item { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border: 1px solid transparent; color: var(--text); }
-.ds-legend-item:hover { background: var(--hover); }
+@media (hover: hover) { .ds-legend-item:hover { background: var(--hover); } }
 .ds-legend-item.off { color: var(--muted); border: 1px dashed var(--border); }
 .ds-legend-item.off span { text-decoration: line-through; }
 .ds-legend-item.off svg { opacity: .3; }
@@ -872,13 +873,15 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
 /* the session's colour: a button opening its colour popup (prefs.js) */
 .pref-swatch { width: 18px; height: 18px; margin: 0 8px 0 0; padding: 0; border-radius: 4px; border: 1px solid var(--border);
   cursor: pointer; flex: none; }
-.pref-swatch:hover, .pref-swatch[aria-expanded="true"] { border-color: var(--text); box-shadow: 0 0 0 2px var(--accent); }
+@media (hover: hover) { .pref-swatch:hover { border-color: var(--text); box-shadow: 0 0 0 2px var(--accent); } }
+.pref-swatch[aria-expanded="true"] { border-color: var(--text); box-shadow: 0 0 0 2px var(--accent); }
 .pref-pop { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: 196px; padding: 8px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
 .pref-pop-head { font-size: 11px; font-weight: 600; margin-bottom: 6px; }
 .pref-pop-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .pref-pop-grid button { aspect-ratio: 1; padding: 0; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; }
-.pref-pop-grid button:hover, .pref-pop-grid button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: hover) { .pref-pop-grid button:hover { outline: 2px solid var(--accent); outline-offset: 1px; } }
+.pref-pop-grid button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pref-pop-grid button.on { outline: 2px solid var(--text); outline-offset: 1px; }
 .pref-pop-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .pref-pop-row .pref-reset { margin-top: 0; flex: 1; }
@@ -888,7 +891,7 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; }
 .pref-reset { margin-top: 6px; border: 1px solid var(--border); border-radius: 4px; background: none; color: var(--text);
   padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer; }
-.pref-reset:hover { border-color: var(--accent); }
+@media (hover: hover) { .pref-reset:hover { border-color: var(--accent); } }
 /* the rail's views, each with its switch */
 .pref-view { margin: 4px 0; }
 .pref-view-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
@@ -901,10 +904,10 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
   border: 1px solid var(--border); border-radius: 10px; background: var(--panel); cursor: pointer; }
 .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%;
   background: var(--muted); transition: transform .15s ease, background-color .15s ease; }
-.switch:hover { background: var(--hover); }
+@media (hover: hover) { .switch:hover { background: var(--hover); } }
 .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
 .switch[aria-checked="true"]::after { transform: translateX(16px); background: #fff; }
-.switch[aria-checked="true"]:hover { background: var(--accent); filter: brightness(1.12); }
+@media (hover: hover) { .switch[aria-checked="true"]:hover { background: var(--accent); filter: brightness(1.12); } }
 .switch:disabled { opacity: .5; cursor: default; }
 .switch-row { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
@@ -912,7 +915,8 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
 .menu-title { padding: 4px 10px 6px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu[role="menu"] button { display: block; width: 100%; text-align: left; padding: 6px 10px; border: 0; border-radius: 5px; }
-.menu[role="menu"] button:hover, .menu[role="menu"] button:focus-visible { background: var(--hover); outline: none; }
+@media (hover: hover) { .menu[role="menu"] button:hover { background: var(--hover); outline: none; } }
+.menu[role="menu"] button:focus-visible { background: var(--hover); outline: none; }
 .menu[role="menu"] button.danger { color: var(--down); }
 /* Watchlist (side panel) */
 #pWatch .w-head { display: flex; align-items: center; gap: 6px; }
@@ -922,14 +926,14 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
 #pWatch .w-head button:disabled { opacity: .35; cursor: default; }
 #watchFilter { width: 100%; box-sizing: border-box; margin: 4px 0 6px; padding: 4px 6px; border: 1px solid var(--border);
   border-radius: 4px; background: var(--bg); color: var(--text); }
-.w-wrap { max-height: calc(100vh - 200px); overflow: auto; }
+.w-wrap { max-height: calc(100vh - 200px); max-height: calc(100dvh - 200px); overflow: auto; }
 .w-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; }
 .w-table th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 500; text-align: left;
   cursor: pointer; user-select: none; padding: 2px 4px; }
 .w-table th.num, .w-table td.num { text-align: right; }
 .w-table td { padding: 3px 4px; border-top: 1px solid var(--border); white-space: nowrap; }
 .w-table tr[data-ticker] { cursor: pointer; }
-.w-table tr[data-ticker]:hover td { background: var(--hover); }
+@media (hover: hover) { .w-table tr[data-ticker]:hover td { background: var(--hover); } }
 .w-table tr.on td { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .w-table .w-sym { display: flex; align-items: center; gap: 6px; }
 .w-table .w-ex { color: var(--muted); font-size: 10px; margin-left: 4px; }
@@ -941,7 +945,7 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
 .w-table .w-x button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 14px;
   line-height: 1; visibility: hidden; }
 .w-table tr:hover .w-x button, .w-table .w-x button:focus-visible { visibility: visible; }
-.w-table .w-x button:hover { color: var(--down); }
+@media (hover: hover) { .w-table .w-x button:hover { color: var(--down); } }
 #pWatch .w-head #watchAdd[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 #pWatch .w-addbox { margin: 4px 0 6px; }
 #pWatch .w-addbox input { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--accent);
@@ -958,7 +962,7 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
 .w-map-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 4px; }
 .w-map-empty button { border: 1px solid var(--border); border-radius: 4px; background: none; color: var(--text);
   padding: 3px 10px; cursor: pointer; }
-.w-map-empty button:hover { border-color: var(--accent); }
+@media (hover: hover) { .w-map-empty button:hover { border-color: var(--accent); } }
 .derived-tag.interp { color: #b07cff; border-color: #b07cff; }
 /* a dataset's monthly history before the feed (app.js HIST_COLOR); flagged where it and the feed disagree */
 .derived-tag.hist, .history-chip { color: #d4a72c; border-color: #d4a72c; }
@@ -977,7 +981,7 @@ table.l2 tr.cursor.beyond td { box-shadow: inset 0 1px 0 var(--muted), inset 0 -
 .sch-error { color: var(--down, #ef5350); margin: 6px 0; }
 .sch-trades { max-height: 260px; overflow: auto; margin-top: 6px; }
 .sch-trades tr[data-time] { cursor: pointer; }
-.sch-trades tr[data-time]:hover td { background: var(--hover); }
+@media (hover: hover) { .sch-trades tr[data-time]:hover td { background: var(--hover); } }
 /* Replay (Analysis view): its button shows there only; the controls float above the time axis */
 body:not([data-pane="analysis"]) .analysis-only { display: none; }
 #chart.picking { cursor: crosshair; }
@@ -1028,7 +1032,7 @@ main > .view.ex-view:not([hidden]) { display: grid; }
 .ex-group { margin: 14px 0 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .ex-venue { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; width: 100%; text-align: left; padding: 6px 8px;
   margin: 2px 0; border: 1px solid transparent; border-radius: 6px; background: none; }
-.ex-venue:hover { background: var(--panel); }
+@media (hover: hover) { .ex-venue:hover { background: var(--panel); } }
 .ex-venue.active { border-color: var(--accent); background: var(--panel); }
 .ex-name { font-weight: 600; }
 .ex-count { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
@@ -1071,7 +1075,7 @@ main > .view.ex-view:not([hidden]) { display: grid; }
 .pl-part[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 6px; }
 .pl-part-pause { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 8px 0 2px; }
 .pl-link { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
-.pl-link:hover { text-decoration: underline; }
+@media (hover: hover) { .pl-link:hover { text-decoration: underline; } }
 .ex-state.pl-killed, .ex-state.pl-no-key { color: var(--down); border-color: var(--down); }
 .ex-state.pl-partly { color: var(--accent); border-color: var(--accent); }
 .pl-view .ex-list h4 { margin: 16px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
@@ -1149,4 +1153,155 @@ main > .view.bound-view { padding: 0; }
 #boundFrame { flex: 1; width: 100%; min-height: 0; border: 0; border-radius: var(--radius); background: var(--card); }
 /* The main page's sign-in holding the login app's page (login.html): wider than the profile card, the frame tall. */
 .login.login-main.with-app { width: min(660px, calc(100vw - 32px)); }
-.login-app iframe { width: 100%; height: min(600px, calc(100vh - 230px)); border: 0; border-radius: 8px; background: var(--bg); }
+.login-app iframe { width: 100%; height: min(600px, calc(100vh - 230px)); height: min(600px, calc(100dvh - 230px)); border: 0; border-radius: 8px; background: var(--bg); }
+
+/* -- Touch screens and the on-screen keyboard (the user, 2026-11-10: "let's do an update. I want to support touch as
+   well as mouse clicking on the interface ... We'll make sure it works across all apps"; "Support for virtual keyboard
+   on tablets and phones"). The library's touch.js gives <html> the class "touch" on a device with a touch screen and
+   "keyboard" while an on-screen keyboard lies over the page. The targets grow whenever the device has a touch screen
+   ((any-pointer: coarse)) and every hover highlight above is a mouse's ((hover: hover)): a mouse and a hardware
+   keyboard see what they saw. visual-touch.css (the globe, the maps, level 2, replay, schemes, trading) and
+   views-touch.css (the rail's views) come after this file. -- */
+
+/* words for touch screens only, and for a mouse only (touch.js injects the same rule; kept here for the page without it) */
+html:not(.touch) .touch-only, html.touch .mouse-only { display: none !important; }
+/* a double tap on a control does not zoom the page (a pinch still does): the switcher's tiles and the map's (divs
+   with role="option"), and what a tap explains (the status line, the GPU's note, the model's window, the * chips) */
+button, select, input, textarea, summary, label, a[href], [role="button"], [role="switch"], [role="tab"],
+[role="menuitem"], [role="option"], #statusText, #gpuNote, #modelWindow, .derived-chip, .params .approx {
+  touch-action: manipulation; }
+/* a drag on the side panel's grip is the grip's, never the page's scroll (app.js initPanel: pointer capture) */
+#panelResizer { touch-action: none; }
+
+/* The newest bar's » at the right end of the time axis (touch screens: app.js placeNewest), sized as the switches */
+.newest-btn { position: absolute; z-index: 6; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  font-size: 15px; line-height: 1; color: var(--text); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; cursor: pointer; }
+.newest-btn[hidden] { display: none; }
+/* A pane's grip (touch screens: app.js placePaneGrips), over the gap above an indicator's pane: a small bar to drag, in a
+   finger's 40 px */
+.pane-grip { position: absolute; z-index: 5; width: 72px; height: 40px; touch-action: none; cursor: ns-resize; }
+.pane-grip::after { content: ""; position: absolute; left: 22px; right: 22px; top: 17px; height: 6px; border-radius: 3px;
+  background: var(--muted); opacity: .6; }
+.pane-grip.dragging::after { background: var(--accent); opacity: 1; }
+@media (hover: hover) { .pane-grip:hover::after { background: var(--accent); opacity: .9; } }
+/* What a finger taps next while drawing (app.js renderDrawHint), over the top of the chart, with Cancel */
+.draw-hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 7; display: flex; align-items: center;
+  gap: 10px; width: max-content; max-width: calc(100% - 24px); padding: 4px 4px 4px 12px; font-size: 12px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
+.draw-hint[hidden] { display: none; }
+.draw-hint-text { min-width: 0; }
+.draw-hint-cancel { flex: none; border: 1px solid var(--border); }
+/* The bar beside a drawing a finger selected (drawclip.js): Delete, Copy, Cut, Paste, Duplicate */
+.draw-bar { position: absolute; z-index: 26; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; max-width: calc(100% - 8px);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+.draw-bar[hidden] { display: none; }
+.draw-bar button { border: 1px solid var(--border); }
+.draw-bar button:disabled { opacity: .45; cursor: default; }
+/* The magnet's mode in a word under its icon (touch screens), the chart type's own description in the top bar (touch
+   screens), the GPU's state in the status line (touch screens, while the chart is drawn on the CPU) */
+#tools button { position: relative; }
+.tool-badge { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; line-height: 1; text-align: center;
+  color: var(--accent); pointer-events: none; }
+.tool-badge:empty { display: none; }
+/* what a * chip means, in a few words inside it (touch screens: app.js chipGist) */
+.chip-gist { margin-left: 5px; font-size: 10px; opacity: .85; }
+.params .type-about { max-width: 30ch; font-size: 11px; line-height: 1.2; white-space: normal; color: var(--muted); }
+.gpu-note { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tz-menu .tz-dst { overflow: hidden; text-overflow: ellipsis; }
+/* The side panel's close button: a phone's, where the panel lies over the chart (below) */
+.panel-close-row, .panel-close { display: none; }
+
+/* a finger's targets, about 40 px, whenever the device has a touch screen; the fields' words at 16 px at least (an
+   iPhone zooms the page into a smaller one). The base sizes weigh no more than an element's name (:where), so any
+   view's own rule for its buttons (visual-touch.css, views-touch.css) outranks them; the switches on the time axis, a
+   link-like button in a sentence and Preferences' colour swatches (views-touch.css sizes them) keep theirs. The
+   .switch and .menu rules are liminal.css's word for word (.menu as .menu[role="menu"]): test_ui_preferences compares
+   them. */
+@media (any-pointer: coarse) {
+  button:where(:not(.switch, .axis-btn, .newest-btn, .pl-link, .pref-swatch)), select { min-height: 40px; }
+  button:where(:not(.switch, .axis-btn, .newest-btn, .pl-link, .pref-swatch)) { min-width: 40px; }
+  input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="hidden"])) { min-height: 40px; }
+  input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+  input[type="range"] { min-height: 32px; }
+  :root input:not([type]), :root input[type="text"], :root input[type="search"], :root input[type="email"],
+  :root input[type="url"], :root input[type="tel"], :root input[type="password"], :root input[type="number"],
+  :root input[type="date"], :root input[type="datetime-local"], :root input[type="month"], :root input[type="time"],
+  :root input[type="week"], :root textarea, :root select { font-size: 16px; font-size: max(16px, 1em); }
+  td > button + button { margin-left: 8px; }  /* a row's buttons side by side: room between them for a finger */
+  .switch { width: 48px; height: 28px; border-radius: 14px; }
+  .switch::after { top: 3px; left: 3px; width: 20px; height: 20px; }
+  .switch[aria-checked="true"]::after { transform: translateX(20px); }
+  .switch-row { min-height: 44px; }
+  .menu[role="menu"] button { min-height: 44px; }
+  /* the chart page's own: the tools, the top bar, the menus, the switches and handles on the chart */
+  #tools button { width: 40px; height: 40px; padding: 8px; }
+  #tools svg { width: 22px; height: 22px; }
+  .params input { width: 88px; }
+  .auto-detail input { width: 140px; }
+  #modelDetail { width: 140px; }
+  .auto-level { display: inline-flex; align-items: center; min-height: 40px; padding: 2px 10px; }
+  .derived-chip { display: inline-flex; align-items: center; min-height: 40px; padding: 2px 8px; }
+  .menu-item { min-height: 44px; }
+  .dropdown label { min-height: 40px; }
+  .layout-row { gap: 10px; }
+  .axis-btn, .newest-btn { font-size: 12px; }
+  .axis-btn::before, .newest-btn::before { content: ""; position: absolute; inset: -4px -2px; }  /* the hit area: 40 px */
+  .tz-menu { touch-action: none; }  /* a finger's drag turns the list (app.js) */
+  .tz-menu button, .sess-menu button { min-height: 40px; align-items: center; font-size: 13px; }
+  .tz-menu .tz-step { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .tz-menu .tz-dst { display: block; font-size: 10px; line-height: 1.2; }
+  .now-handle { font-size: 11px; line-height: 18px; }
+  .now-handle::after { content: ""; position: absolute; left: -14px; right: -14px; top: -12px; bottom: -8px; }  /* a finger's reach */
+  #panelResizer::before { content: ""; position: absolute; top: 0; bottom: 0; left: -17px; right: -17px; }  /* 40 px to grab */
+  .draw-bar, .draw-hint, .newest-btn, .axis-btn, .pane-grip, .tz-menu, .sess-menu, .now-handle {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  /* a scroller's end does not drag the panel or the page behind it (the watchlist's table and a scheme's trades in the
+     side panel) */
+  #sidePanel, #symbolList, .dropdown, .w-wrap, .sch-trades { overscroll-behavior: contain; }
+}
+
+/* The on-screen keyboard laid over the page (touch.js: Safari, or a browser without the viewport's
+   interactive-widget=resizes-content): the page, fitted to the window, fits the height left above the keyboard, its
+   panes scrolling as before; an open dialog stands at the top of what is seen, its list taking the height left. */
+@media not all and (max-width: 700px) { html.keyboard body { height: var(--vvh, 100%); } }
+html.keyboard dialog[open] { margin-top: calc(var(--vv-top, 0px) + 8px); margin-bottom: auto; max-height: calc(var(--vvh, 100dvh) - 16px); }
+html.keyboard dialog.switcher[open] { display: flex; flex-direction: column; }
+html.keyboard dialog.switcher[open] #symbolList { flex: 1; min-height: 0; max-height: none; }
+
+/* Phones (the user, 2026-11-10: below about 700 px wide an app's panes stack in one column, and the chart page's side
+   panel opens over the chart; larger screens keep their layout exactly): the chart takes the view's whole width, the
+   drawing tools are a strip above it that scrolls sideways, the side panel lies over the chart (its × or a tap on its
+   rail icon closes it), the top bar's tools and the symbol switcher's head wrap. The chart page stays fitted to the
+   window (a finger on the chart is the chart's: it would never scroll a page). */
+@media (max-width: 700px) {
+  body[data-view="chart"] { height: 100%; }
+  html.keyboard body[data-view="chart"] { height: var(--vvh, 100%); }
+  #topbar .symbol { min-width: 0; }
+  .strip, .params { flex-wrap: wrap; }
+  .strip > .group { flex-wrap: wrap; row-gap: 4px; min-width: 0; max-width: 100%; }  /* the periods' auto, its slider and the chip */
+  #viewChart { position: relative; flex-direction: column; }
+  #tools { flex-direction: row; align-self: stretch; flex: none; max-width: 100%; max-height: none; overflow-x: auto;
+    overflow-y: hidden; padding: 4px var(--pad); overscroll-behavior-x: contain; }
+  #tools button { flex: none; }
+  #tools hr { width: 0; height: auto; align-self: stretch; margin: 4px 3px; border-top: 0; border-left: 1px solid var(--border); }
+  #chart { flex: 1; width: 100%; min-height: 0; }
+  #panelResizer { display: none; }
+  #sidePanel { position: absolute; z-index: 40; top: 0; right: 0; bottom: 0; width: min(360px, 100%); padding: var(--gap);
+    background: var(--frame); border-radius: var(--radius); box-shadow: -10px 0 28px rgba(0, 0, 0, .45); overscroll-behavior: contain; }
+  /* the × in a row of its own across the panel's top, kept there as the panel scrolls: what scrolls up goes under the
+     row's background, and no control of the panel's lies under the × */
+  .panel-close-row { display: flex; justify-content: flex-end; position: sticky; top: 0; z-index: 3;
+    margin: calc(-1 * var(--gap)) calc(-1 * var(--gap)) 4px; padding: 4px; background: var(--frame); }
+  .panel-close { display: grid; place-items: center; width: 40px; height: 40px; margin: 0; padding: 0; font-size: 20px;
+    line-height: 1; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 50%; }
+  .cursor-box { max-width: calc(100% - 110px); }
+  .dialog-head { flex-wrap: wrap; }
+  .dialog-head input { flex: 1 1 100%; }
+}
+/* The sign-in page never cuts its card's top: the page grows and scrolls once the card is taller than the window (or
+   than what an on-screen keyboard leaves above it), and a card that fits stands in the middle, as before; on a small or
+   short screen the login's frame keeps a height to sign in by */
+body.login-page { height: auto; }
+html.keyboard body.login-page { height: auto; min-height: var(--vvh, 100%); }
+@media (max-width: 700px), (max-height: 640px) { .login-app iframe { min-height: 420px; } }

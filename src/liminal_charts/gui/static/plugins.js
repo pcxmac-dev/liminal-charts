@@ -33,9 +33,25 @@
   const { esc, safeUrl } = window.LiminalIcons;
   let data = null, sel = null, note = '', timer = null;
   const folds = new Map();  // a part's section opened or closed by hand (by its name); else open when alone
+  // Touch screens and the on-screen keyboard (the user, 2026-11-10: "I want to support touch as well as mouse clicking
+  // on the interface"; "Support for virtual keyboard on tablets and phones"): each field's keyboard (the library's
+  // touch.js; a key kept out of password managers), and why a control is off in words a finger can read (a disabled
+  // control's tooltip is a mouse's, when it shows at all).
+  const kb = (kind, more) => window.LiminalTouch?.keyboard(kind, more) || '';
+  const whyNot = (why) => (why ? `<div class="p-muted small touch-only pl-why">${esc(why)}</div>` : '');
+  // a choice declined, or not saved (refused, the integrator away): the picker back on what is in effect, as it was
+  // drawn (drawn again alike, the page leaves the picker as it is, showing what it was last set to)
+  const undo = (select) => {
+    const was = [...select.options].find((o) => o.defaultSelected) || select.options[0];
+    if (was) select.value = was.value;
+  };
 
   const STATE = { ready: 'ready', scanning: 'scanning…', partly: 'keys not set', 'no key': 'no key', killed: 'killed', paused: 'paused',
                   refused: 'refused', failing: 'failing', waiting: 'waiting', off: 'not set up', 'no access': 'no API access' };
+  // a state as the reason a button is off, in a sentence (whyNot)
+  const STATE_WHY = { scanning: 'It is being scanned', partly: 'Some of its keys are not set', killed: 'It is stopped for now',
+                      paused: 'It is paused', refused: 'Its provider refused it', failing: 'Its requests are failing',
+                      waiting: 'It is waiting for its limits', off: 'It is not set up here' };
   const FEED_STATE = { ok: 'read', unchanged: 'unchanged', waiting: 'waiting', failed: 'failed', refused: 'refused',
                        'not asked yet': 'not asked yet' };
   const PUB = 'pub:';  // a publisher's id in the list (its name may be a feed's too)
@@ -121,15 +137,18 @@
     const ask = value
       ? `Use ${variable}=${value}? ${p.title} will keep to that plan's limits, in the app and the sync: choose only the plan you pay for.`
       : `Let ${p.title}'s scan or its default decide ${variable} again?`;
-    if (!window.confirm(ask)) { render(); return; }
+    if (!window.confirm(ask)) { undo(select); render(); return; }
     note = '';
+    let saved = false;
     try {
       const res = await fetch('/api/plugins/plan', { method: 'POST', headers: WRITE_HEADERS,
         body: JSON.stringify({ plugin: p.name, variable, value }) });
       const out = await res.json().catch(() => ({}));
+      saved = res.ok;
       note = res.ok ? `${variable} ${value ? `set to ${value}` : 'left to its scan or default'}: the app uses it now, the sync from its next run.`
         : out.error || res.statusText;
     } catch (err) { note = String(err.message || err); }
+    if (!saved) undo(select);  // not saved: the plan in effect shown, not the one picked
     await load();
   }
 
@@ -166,6 +185,7 @@
         <td><code>${esc(k.name)}</code><div class="p-muted small">${esc(k.label)}</div></td>
         <td>${k.set ? '<span class="up">set</span>' : '<span class="down">not set</span>'}</td>
         <td><input class="pl-key" type="${k.secret ? 'password' : 'text'}" data-var="${esc(k.name)}" autocomplete="off" spellcheck="false"
+          ${kb(k.secret ? 'secret' : 'plain', { autocomplete: null, spellcheck: null })}
           maxlength="512" placeholder="${esc(k.hint || (k.set ? 'type a new one to replace it' : `your ${k.label}`))}"${off}></td>
         <td class="pl-key-btns"><button type="button" data-save-key="${esc(k.name)}" data-owner="${esc(owner)}"${off}>${k.set ? 'Replace' : 'Save'}</button>
           ${k.set ? `<button type="button" data-remove-key="${esc(k.name)}" data-owner="${esc(owner)}"${off}>Remove</button>` : ''}</td></tr>`).join('');
@@ -346,15 +366,18 @@
     const p = data.plugins.find((x) => x.name === select.dataset.planPlugin);
     const variable = select.dataset.var, value = select.value || null;
     const ask = value ? `Set ${variable}=${value} for ${p.title}?` : `Leave ${variable} to its default for ${p.title}?`;
-    if (!window.confirm(ask)) { render(); return; }
+    if (!window.confirm(ask)) { undo(select); render(); return; }
     note = '';
+    let saved = false;
     try {
       const res = await fetch('/api/plugins/plan', { method: 'POST', headers: WRITE_HEADERS,
         body: JSON.stringify({ plugin: p.name, variable, value }) });
       const out = await res.json().catch(() => ({}));
+      saved = res.ok;
       note = res.ok ? `${variable} ${value ? `set to ${value}` : 'left to its default'}: the app uses it now, the sync from its next run.`
         : out.error || res.statusText;
     } catch (err) { note = String(err.message || err); }
+    if (!saved) undo(select);  // not saved: the value in effect shown, not the one picked
     await load();
   }
 
@@ -413,6 +436,7 @@
         <td>${r.available ? '<span class="up">yes</span>' : '<span class="down">no</span>'}</td><td class="p-muted">${esc(r.detail)}</td></tr>`).join('');
     return `<h4 class="pl-scan-head"><span>Capability scan</span>
         <button type="button" data-rescan="${esc(p.name)}"${can ? '' : ' disabled'} title="${esc(why)}">${p.scan.running ? 'Scanning…' : 'Rescan'}</button></h4>
+      ${can ? '' : whyNot(why)}
       <div class="p-muted small">${p.scan.at ? `Last asked ${ago(p.scan.at)}` : 'Not scanned yet'}: on each start of the app, weekly in the sync, and here${
         several(p) ? ` (its ${p.feeds.length} feeds together)` : ''}.</div>
       ${rows ? `<table class="act-table ex-mini"><tbody>${rows}</tbody></table>` : ''}`;
@@ -482,12 +506,15 @@
   function databasesHtml(p) {
     const dbs = p.databases || [];
     if (!dbs.length) return storesHtml(p.name);
+    // on a touch screen each one's path is under its name (a finger hovers nothing), and what shared means is said
     const rows = dbs.map((d) => `<tr><td><code title="${esc(d.path || d.where)}">${esc(d.where)}</code>${d.shared
-      ? ` <span class="chip" title="The app's and other plugins' too: only this plugin's rows in it are its">shared</span>` : ''}</td>
+      ? ` <span class="chip" title="The app's and other plugins' too: only this plugin's rows in it are its">shared</span>` : ''}
+      <div class="p-muted small touch-only pl-path">${esc(d.path || d.where)}</div></td>
       <td class="small">${esc(d.holds)}</td><td>${esc(ENGINES[d.engine] || d.engine)}</td>
       <td class="num">${d.bytes == null ? `<span class="p-muted">${d.engine === 'mongodb' ? 'a server' : 'none yet'}</span>` : size(d.bytes)}</td></tr>`).join('');
     return `${storesHtml(p.name)}<h4>Databases</h4><table class="act-table ex-mini pl-dbs"><thead><tr><th>Database</th><th>What it holds</th><th>Engine</th><th class="num">Size</th></tr></thead>
-      <tbody>${rows}</tbody></table><div class="p-muted small">In the data folder, beside the main file; hover a name for its path here.</div>`;
+      <tbody>${rows}</tbody></table><div class="p-muted small">In the data folder, beside the main file<span class="mouse-only">; hover a name for its path here</span>.${
+        dbs.some((d) => d.shared) ? '<span class="touch-only"> Shared: the app\'s and other plugins\' too, only this plugin\'s rows in it are its.</span>' : ''}</div>`;
   }
 
   // -- its stores (stores.py): the user, 2026-10-31: "each module needs to support sqlite or mongo
@@ -559,16 +586,19 @@
       ? (to === 'DuckDB' ? `Keep ${p.title}'s closed months in DuckDB? The hourly sync copies a few a run, newest first, each checked; SQLite keeps every bar.`
         : `Read ${p.title}'s bars from SQLite alone? The DuckDB files stay until you remove them.`)
       : `Keep ${p.title}'s ${row?.title.toLowerCase() || type} in ${to}? They are copied there now and counted, then read and written there; the store left keeps its copy.`;
-    if (!window.confirm(ask)) { render(); return; }
+    if (!window.confirm(ask)) { undo(select); render(); return; }
     note = '';
+    let saved = false;
     try {
       const res = await fetch('/api/plugins/store', { method: 'POST', headers: WRITE_HEADERS,
         body: JSON.stringify({ plugin: select.dataset.storePlugin, type, engine }) });
       const out = await res.json().catch(() => ({}));
       if (res.ok) Object.assign(storeState, { name: select.dataset.storePlugin, data: out, at: Date.now() });
+      saved = res.ok && !out.error;
       note = res.ok ? (out.error ? `${row?.title || type} stay where they were: ${out.error}` : `${row?.title || type} kept in ${to} from now.`)
         : out.error || res.statusText;
     } catch (err) { note = String(err.message || err); }
+    if (!saved) undo(select);  // they stay where they were: the store in use shown, not the one picked
     render();
   }
 
@@ -615,6 +645,8 @@
       <h4>Scrape checks</h4><ul class="pl-checks small">${checks}</ul>${robots}
       <h4 class="pl-scan-head"><span>Limits, verified</span>
         <button type="button" data-recheck="${esc(p.name)}"${can ? '' : ' disabled'} title="${esc(why)}">${busy ? 'Rechecking…' : 'Recheck'}</button></h4>
+      ${can || busy ? '' : whyNot(data.offline || waitingContact || ['paused', 'refused'].includes(p.state) || p.held ? why
+        : p.state === 'off' ? 'It is not set up here' : 'Another recheck is running')}
       <div class="p-muted small">${rc ? `Last verified ${ago(rc.at)}` : 'Not verified yet'}: weekly, and here.</div>
       ${acct}${(rc?.notes || []).map((n) => `<div class="small">${esc(n)}</div>`).join('')}
       ${seen.length ? `<table class="act-table ex-mini"><tbody>${seen.map(([k, h]) => `<tr><td>${esc(k)}</td><td class="p-muted">${
@@ -717,6 +749,8 @@
     const rows = p.scan.results.map((r) => `<tr><td>${esc(r.what)}</td><td>${r.available ? '<span class="up">yes</span>' : '<span class="down">no</span>'}</td><td class="p-muted">${esc(r.detail)}</td></tr>`).join('');
     return `<h4 class="pl-scan-head"><span>Connect</span>
         <button type="button" data-rescan="${esc(p.name)}"${can ? '' : ' disabled'} title="${esc(why)}">${p.scan.running ? 'Connecting…' : 'Connect'}</button></h4>
+      ${can || p.scan.running ? '' : whyNot(data.offline || data.running || ['ready', 'no key', 'no access'].includes(p.state) ? why
+        : STATE_WHY[p.state] || `Its state: ${STATE[p.state] || p.state}`)}
       <div class="p-muted small">${p.scan.at ? `Last connected ${ago(p.scan.at)}` : 'Not connected yet'}: on each start of the app and here; a plan it finds is used where you set none.</div>
       ${rows ? `<table class="act-table ex-mini"><tbody>${rows}</tbody></table>` : ''}`;
   }
@@ -738,16 +772,19 @@
     const shown = out ? `<div class="pl-ai-answer"><div class="small">${esc(out.text || `(no text: ${out.stop})`)}</div>
         <div class="p-muted small">${esc(out.model)} · ${num(out.usage.inputTokens + out.usage.outputTokens)} tokens · ${usd(out.costUsd)} · ${out.seconds}s${out.verdict ? ` · verdict: ${esc(out.verdict)}` : ''}${out.stop !== 'end_turn' ? ` · ${esc(out.stop)}` : ''}</div></div>` : '';
     return `<h4>Try it</h4><div class="pl-ai-try">
-      <textarea class="pl-ai-q" rows="3" maxlength="4000" placeholder="A question for ${esc(p.title)}: it answers from what you give it here, nothing else"${can ? '' : ' disabled'}></textarea>
+      <textarea class="pl-ai-q" rows="3" maxlength="4000" placeholder="A question for ${esc(p.title)}: it answers from what you give it here, nothing else"${can ? '' : ' disabled'} ${kb('text', 'enter')}></textarea>
       <div class="pl-ai-row"><label>Answer <select class="pl-ai-answer-kind"><option value="text">text</option><option value="verdict">a verdict</option></select></label>
-        <label>Scale <input class="pl-ai-scale" type="text" placeholder="yes, no, unclear" size="18"></label>
+        <label>Scale <input class="pl-ai-scale" type="text" placeholder="yes, no, unclear" size="18" ${kb('plain')}></label>
         <label>Model <select class="pl-ai-model">${models}</select></label>
         <button type="button" data-ai-ask="${esc(p.name)}"${can ? '' : ' disabled'} title="${esc(why || 'One request to the vendor, counted on the caps')}">${aiTry.busy ? 'Asking…' : 'Ask'}</button></div>
-      ${aiTry.error ? `<div class="pl-warn">${esc(aiTry.error)}</div>` : ''}${shown}
+      ${can ? '' : whyNot(why)}${aiTry.error ? `<div class="pl-warn">${esc(aiTry.error)}</div>` : ''}${shown}
       <div class="p-muted small">One request, counted on the caps and kept with the answers; the account is sent only as a digest.</div></div>`;
   }
 
   async function aiAsk(name) {
+    // Ask pressed: its fields are let go (a field typed in is never drawn again), so what it says next shows at once
+    const typing = box.querySelector('.pl-ai-try')?.contains(document.activeElement) ? document.activeElement : null;
+    if (typing && typing.localName !== 'button') typing.blur();
     const q = box.querySelector('textarea.pl-ai-q')?.value.trim();
     if (!q) { aiTry.error = 'Type a question first.'; render(); return; }
     const kind = box.querySelector('select.pl-ai-answer-kind')?.value || 'text';
@@ -825,38 +862,62 @@
       ${p.signup ? `<div class="p-muted small">From ${esc(p.signup)}</div>` : ''}`;
   }
 
+  // Drawn again every 5 s while a plugin's fetching shows (every few seconds in a rescan, every minute else): the three
+  // columns stay, each drawn again in its parts, a part only when it changed (panels.js Views.patch), so each column
+  // keeps its scroll, a tap on what did not change lands, and the field being typed in (a key in Setup, the question
+  // in Try it) is never replaced while it is typed in: an on-screen keyboard is not closed nor its word cut. Nothing
+  // is drawn again under a finger or while a finger's scroll moves (the user, 2026-11-10: "I want to support touch as
+  // well as mouse clicking on the interface"; "Support for virtual keyboard on tablets and phones").
   function render() {
     if (!data) { box.innerHTML = '<div class="empty">Loading the plugins…</div>'; return; }
     const p = plugin(), pub = publisher();
-    const scrolled = box.querySelector('.ex-list')?.scrollTop || 0;
-    // what is being typed in Setup survives the view's refreshes (every minute, every few seconds in a rescan)
-    const typed = [...box.querySelectorAll('input.pl-key')].filter((i) => i.value).map((i) => [i.dataset.var, i.value]);
-    const focused = document.activeElement?.matches?.('input.pl-key') ? document.activeElement.dataset.var : null;
     const setUp = data.plugins.filter((x) => !x.ai && x.configured && x.state !== 'no key').length;
     const feedCount = data.plugins.filter((x) => !x.ai).length;
     const pubPlugins = (data.publishers || []).filter((q) => !parentOf(q)).length;  // its parts in it
-    const asked = box.querySelector('textarea.pl-ai-q')?.value || '';  // a question being typed survives the refreshes
     const head = pub ? `publisher · ${pubKind(pub)} · ${pubCount(pub)}`
       : p?.ai ? `AI assistant · ${p.ai.vendor} · ${p.ai.plan || 'no plan'} · ${p.ai.model}`
       : p ? `${p.archive ? 'closed archive' : p.feeds.some((f) => f.archive) ? 'feed, a closed archive in part' : 'feed'} · ${p.kind} data · ${p.assets.join(', ')}` : '';
-    box.innerHTML = `
-      <div class="ex-venues"><div class="view-head"><div><h2>Plugins</h2>
+    const cols = [
+      `<div class="view-head"><div><h2>Plugins</h2>
         <div class="p-muted small">${num(data.plugins.length + pubPlugins)} plugins · ${num(setUp)} of ${num(feedCount)} feeds set up · plugin API ${esc(data.api)}</div></div></div>
         <button type="button" class="pl-all" data-rescan="*"${data.offline || data.running ? ' disabled' : ''}
           title="${data.offline ? 'This offline copy of the app sends no requests' : 'Every plugin set up here asks its provider again (a few requests each)'}">${data.running ? 'Scanning…' : 'Rescan all'}</button>
+        ${data.offline ? whyNot('This offline copy of the app sends no requests and saves no settings: its buttons and pickers are off') : ''}
         ${note ? `<div class="p-muted small pl-note-line">${esc(note)}</div>` : ''}
-        ${listHtml()}</div>
-      <div class="ex-list"><div class="view-head"><div><h2>${esc(pub?.title || p?.title || '')}</h2>
-        <div class="p-muted small">${esc(head)}</div></div></div>${mainHtml()}</div>
-      <aside class="ex-side">${sideHtml()}</aside>`;
-    box.querySelector('.ex-list').scrollTop = scrolled;
-    const askBox = box.querySelector('textarea.pl-ai-q');
-    if (askBox && asked) askBox.value = asked;
+        ${listHtml()}`,
+      `<div class="view-head"><div><h2>${esc(pub?.title || p?.title || '')}</h2>
+        <div class="p-muted small">${esc(head)}</div></div></div>${mainHtml()}`,
+      sideHtml(),
+    ];
+    window.Views.redraw(box, () => paint(cols));
+  }
+
+  function paint([left, middle, side]) {
+    const fields = new Set(box.querySelectorAll('input, textarea, select'));  // a field drawn new gets back what it held
+    // what is being typed in Setup survives the view's refreshes (every minute, every few seconds in a rescan)
+    const typed = [...box.querySelectorAll('input.pl-key')].filter((i) => i.value).map((i) => [i.dataset.var, i.value]);
+    // and the question being typed in Try it, its scale, the answer and the model picked
+    const asked = ['textarea.pl-ai-q', 'input.pl-ai-scale', 'select.pl-ai-answer-kind', 'select.pl-ai-model']
+      .map((q) => [q, box.querySelector(q)?.value]).filter(([, v]) => v);
+    const [a, b, c] = box.children;
+    if (box.children.length === 3 && a.matches('.ex-venues') && b.matches('.ex-list') && c.matches('.ex-side')) {
+      window.Views.patch(a, left, render);
+      window.Views.patch(b, middle, render);
+      window.Views.patch(c, side, render);
+    } else {
+      const keep = [...box.querySelectorAll('.ex-venues, .ex-list, .ex-side')].map((el) => el.scrollTop);
+      box.innerHTML = `<div class="ex-venues">${left}</div><div class="ex-list">${middle}</div><aside class="ex-side">${side}</aside>`;
+      box.querySelectorAll('.ex-venues, .ex-list, .ex-side').forEach((el, i) => { el.scrollTop = keep[i] || 0; });
+    }
+    const fresh = (f) => !!f && !fields.has(f);
     for (const [v, value] of typed) {
       const input = box.querySelector(`input.pl-key[data-var="${CSS.escape(v)}"]`);
-      if (input) input.value = value;
+      if (fresh(input)) input.value = value;
     }
-    if (focused) box.querySelector(`input.pl-key[data-var="${CSS.escape(focused)}"]`)?.focus();
+    for (const [q, value] of asked) {
+      const f = box.querySelector(q);
+      if (fresh(f) && (f.localName !== 'select' || [...f.options].some((o) => o.value === value))) f.value = value;
+    }
   }
 
   box.addEventListener('keydown', (e) => {  // Enter in a Setup field saves it
@@ -888,13 +949,26 @@
       const value = input?.value.trim();
       if (!value) { note = `Type ${t.dataset.saveKey} first.`; render(); return; }
       input.value = '';  // sent once; never kept in the page
-      saveKey(t.dataset.owner, t.dataset.saveKey, value);
+      // saved from its field (Enter, an on-screen keyboard's Done): nothing is typed in it now, so it is let go and
+      // drawn again with the key set (a field typed in is never replaced). A hardware keyboard's user gets it back
+      // after, as before; an on-screen keyboard is put away (focused again, the field would call it up unasked)
+      const back = document.activeElement === input ? t.dataset.saveKey : null;
+      const soft = !!window.Views.softKeyboard?.();
+      if (back) input.blur();
+      saveKey(t.dataset.owner, t.dataset.saveKey, value).then(() => {
+        const again = back && !soft && box.querySelector(`input.pl-key[data-var="${CSS.escape(back)}"]`);
+        if (again) again.focus();
+      });
     } else if (t.dataset.removeKey) {
       if (window.confirm(`Remove ${t.dataset.removeKey} from your user environment variables? What reads it stops until you set it again.`)) {
         saveKey(t.dataset.owner, t.dataset.removeKey, null);
       }
     } else if (t.dataset.plugin && t.dataset.plugin !== sel) {
+      // another plugin picked: a field still focused (a key half typed) let go, so its page is all the new plugin's;
+      // on a phone (the columns stacked) its page, below the list, brought into view
+      window.Views.letGo(box);
       sel = t.dataset.plugin; render();
+      window.Views.reveal(box.querySelector('.ex-list'));
     } else if (t.dataset.rescan) {
       rescan(t.dataset.rescan === '*' ? null : t.dataset.rescan);
     } else if (t.dataset.recheck) {

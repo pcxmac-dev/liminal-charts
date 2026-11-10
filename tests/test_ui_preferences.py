@@ -90,7 +90,7 @@ def test_the_front_answers_the_ui_preferences_itself(tmp_path, monkeypatch):
         assert status == 200 and (p["theme"], p["base"], p["saved"]) == ("midnight", "dark", True)
         assert ui.preferences()["theme"] == "midnight"  # what the platform's Preferences plugin reads
         assert _ask(port, "GET", "/api/ui")[1]["theme"] == "midnight"
-        for name in ("theme.js", "menu.js"):
+        for name in ("theme.js", "touch.js", "menu.js"):  # touch.js: touch screens and the keyboard (liminal-libs 1.42.0)
             status, js = _ask(port, "GET", f"/{name}")
             assert status == 200 and js == (ui.STATIC / name).read_bytes()  # the library's own
         # a file that cannot be written (its folder a file): the page is told, never a dropped connection

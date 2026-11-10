@@ -13,6 +13,8 @@
                    ['CFTC', 'CFTC'], ['Treasury', 'Treasury'], ['rules', 'Federal Register']];
   const STATE_CLASS = { ok: 'ok', unchanged: 'ok', waiting: 'wait', failed: 'bad', refused: 'bad' };
   let data = null, fetchedAt = 0, filter = 'all', query = '';
+  // the keyboard a field calls up on a phone or a tablet (the library's touch.js)
+  const kb = (kind, more) => window.LiminalTouch?.keyboard(kind, more) || '';
 
   async function load(force = false) {
     if (!force && data && Date.now() - fetchedAt < 60000) return render();
@@ -53,11 +55,15 @@
     const counts = Object.fromEntries(FILTERS.map(([k]) => [k, data.items.filter((it) => matches(it, k)).length]));
     const rows = data.items.filter((it) => matches(it, filter) && (!q || [it.title, it.agency, it.kind, ...it.tags].some((v) => v && v.toLowerCase().includes(q))));
     const waiting = data.sources.filter((s) => s.state === 'waiting');
-    box.innerHTML = `
+    // The head is drawn alike every time, so its filter box is never replaced (the user, 2026-11-10: "Support for
+    // virtual keyboard on tablets and phones"): typed in, it keeps its word, its caret and an on-screen keyboard's word
+    // being composed; what follows it is drawn again as it is typed and every minute, each part only when it changed
+    // and none under a finger (panels.js Views).
+    window.Views.redraw(box, () => draw(`
       <div class="view-head"><div><h2>Federal</h2>
         <div class="p-muted small">The Fed, the SEC, BLS, the Federal Register (SEC with FINRA's and the exchanges' rule filings, CFTC, Fed,
           Treasury) and the New York Fed's rates: official feeds, each agency a part of the Federal plugin, read on its own schedule (Plugins view).</div></div>
-        <div class="view-actions"><input id="govSearch" type="search" placeholder="Filter" value="${esc(query)}"></div></div>
+        <div class="view-actions"><input id="govSearch" type="search" placeholder="Filter" aria-label="Filter the agencies' newest" ${kb('search')}></div></div>
       <h3 class="gov-h">Current regulatory parameters</h3>
       <div class="gov-params">${data.parameters.map(parameter).join('')}</div>
       <h3 class="gov-h">Newest</h3>
@@ -77,17 +83,23 @@
           <td><span class="gov-state ${STATE_CLASS[s.state] || ''}">${esc(s.state)}</span>${s.message && s.state !== 'waiting' ? ` <span class="p-muted small">${esc(s.message)}</span>` : ''}</td>
           <td>${s.okAt ? esc(when(s.okAt)) : '–'}</td></tr>`).join('')}</tbody></table></div>
       <div class="p-muted small gov-note">To read at the agencies (FINRA's site is not read by the app: its terms bar automated readers):
-        ${data.links.map((l) => link(l.title, l.url)).join(' · ')}</div>`;
-    document.getElementById('govSearch').addEventListener('input', (e) => {
-      // drawn again as typed: the new box gets the caret (or selection) where it was, not at the start
-      const { selectionStart: from, selectionEnd: to } = e.target;
-      query = e.target.value;
-      render();
-      const box = document.getElementById('govSearch');
-      box.focus();
-      box.setSelectionRange(from, to);
-    });
+        ${data.links.map((l) => link(l.title, l.url)).join(' · ')}</div>`));
   }
+
+  function draw(html) {
+    window.Views.patch(box, html, render);
+    const input = document.getElementById('govSearch');  // drawn new (the view's first time): what was typed before
+    if (input && document.activeElement !== input && input.value !== query) input.value = query;
+  }
+
+  box.addEventListener('input', (e) => {  // the filter as typed: what it filters drawn again, the box left as it is
+    if (e.target.id !== 'govSearch') return;
+    query = e.target.value;
+    render();
+  });
+  box.addEventListener('keydown', (e) => {  // an on-screen keyboard's Search: put away, so the list it found shows
+    if (e.key === 'Enter' && e.target.id === 'govSearch' && window.Views.softKeyboard()) e.target.blur();
+  });
 
   box.addEventListener('click', (e) => {
     const f = e.target.closest('[data-gf]');

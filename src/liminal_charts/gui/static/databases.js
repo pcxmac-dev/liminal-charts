@@ -132,12 +132,17 @@
       ${tile('Last written', esc(ago(e.modified)), esc(e.modified ? when(e.modified) : e.engine === 'mongodb' ? 'the server writes its own files' : '–'))}${rowsTile}</div>`;
   }
 
+  // What a tag in a table means, said under it on a touch screen: its tooltip is a mouse's (the user, 2026-11-10: what
+  // a tag means becomes visible text on touch screens)
+  const tagNote = (words) => (words.length ? `<div class="p-muted small touch-only db-note">${words.map(esc).join('<br>')}</div>` : '');
+
   function tablesHtml(f) {
     const ts = f.tables || [];
     if (!ts.length) return '<div class="p-muted small db-note">No tables.</div>';
     return `<h4>Tables</h4><div class="table-wrap"><table class="act-table db-tables"><thead><tr><th>Table</th><th class="num">Rows</th><th>Counted</th><th class="num">Indexes</th></tr></thead>
       <tbody>${ts.map((t) => `<tr><td><b>${esc(t.name)}</b>${t.withoutRowid ? ' <span class="chip" title="Its rows in its primary key\'s B-tree (WITHOUT ROWID)">without rowid</span>' : ''}</td>
-        <td class="num">${rows(t.rows, t.how)}</td><td class="small">${esc(HOW[t.how] || t.how)}</td><td class="num">${t.indexes == null ? '–' : num(t.indexes)}</td></tr>`).join('')}</tbody></table></div>`;
+        <td class="num">${rows(t.rows, t.how)}</td><td class="small">${esc(HOW[t.how] || t.how)}</td><td class="num">${t.indexes == null ? '–' : num(t.indexes)}</td></tr>`).join('')}</tbody></table></div>
+      ${tagNote(ts.some((t) => t.withoutRowid) ? ["without rowid: its rows in its primary key's B-tree (WITHOUT ROWID)"] : [])}`;
   }
 
   function monthsHtml(f) {
@@ -147,7 +152,8 @@
       <thead><tr><th>Month</th><th class="num">Bars</th><th class="num">Built</th><th class="num">Size</th><th>Copied</th><th>State</th></tr></thead>
       <tbody>${ms.map((m) => `<tr><td><b>${esc(m.month)}</b><div class="sub">${esc(m.file)}</div></td><td class="num">${num(m.bars)}</td>
         <td class="num">${num(m.built)}</td><td class="num">${bytes(m.onDisk ?? m.bytes)}</td><td class="small">${esc(when(m.copiedAt))}</td>
-        <td class="small">${m.onDisk == null ? '<span class="warn">its file is missing</span>' : m.stale ? '<span class="warn" title="Written in SQLite since its copy: read from SQLite until it is copied again">written since</span>' : 'current'}</td></tr>`).join('')}</tbody></table></div>` : '';
+        <td class="small">${m.onDisk == null ? '<span class="warn">its file is missing</span>' : m.stale ? '<span class="warn" title="Written in SQLite since its copy: read from SQLite until it is copied again">written since</span>' : 'current'}</td></tr>`).join('')}</tbody></table></div>
+      ${tagNote(ms.some((m) => m.onDisk != null && m.stale) ? ['written since: written in SQLite since its copy, so read from SQLite until it is copied again'] : [])}` : '';
     const un = (f.unlisted || []).length ? `<h4>Not in the manifest</h4><table class="act-table ex-mini"><tbody>${f.unlisted.map((u) => `<tr><td>${esc(u.file)}</td>
       <td class="num">${bytes(u.size)}</td><td class="small">${esc(u.state === 'copying' ? 'a copy going on' : u.state === 'superseded' ? 'superseded: removed by the next run' : 'unlisted')}</td></tr>`).join('')}</tbody></table>` : '';
     return head + table + un;
@@ -227,23 +233,39 @@
         ${num(lim.probes)} paths through its B-tree; a feed's months, what the manifest counted when each was copied. MongoDB is asked only while it runs.</div>`;
   }
 
+  // Drawn again every 10 s: the three columns stay, each drawn again in its parts, a part only when it changed, and
+  // nothing under a finger (its tap lands) or while a finger's scroll moves (panels.js Views; the user, 2026-11-10: "I
+  // want to support touch as well as mouse clicking on the interface").
   function render() {
     if (document.body.dataset.view !== 'databases') return;
     if (!data) {
       box.innerHTML = `<div class="empty">${failed ? esc(failed) : 'Listing the databases…'}</div>`;
       return;
     }
-    const keep = [...box.querySelectorAll('.ex-venues, .ex-list, .ex-side')].map((el) => el.scrollTop);
     const e = entry(sel);
     const t = data.totals || {};
-    box.innerHTML = `
-      <div class="ex-venues"><div class="view-head"><div><h2>Databases</h2>
+    const cols = [
+      `<div class="view-head"><div><h2>Databases</h2>
         <div class="p-muted small">${num(t.databases)} databases · ${bytes(t.size)} · ${esc(growth(t.growth))}</div></div></div>
-        ${failed ? `<div class="small warn">${esc(failed)}</div>` : ''}${listHtml()}</div>
-      <div class="ex-list"><div class="view-head"><div><h2>${esc(e ? e.name : '')}</h2>
+        ${failed ? `<div class="small warn">${esc(failed)}</div>` : ''}${listHtml()}`,
+      `<div class="view-head"><div><h2>${esc(e ? e.name : '')}</h2>
         <div class="p-muted small">${e ? `${esc(ENGINE[e.engine] || e.engine)} · ${esc((data.groups.find((g) => g.id === e.group) || {}).about || '')}` : ''}</div></div></div>
-        ${e ? mainHtml(e) : '<div class="empty">No database in the data folder.</div>'}</div>
-      <aside class="ex-side">${e ? sideHtml(e) : ''}</aside>`;
+        ${e ? mainHtml(e) : '<div class="empty">No database in the data folder.</div>'}`,
+      e ? sideHtml(e) : '',
+    ];
+    window.Views.redraw(box, () => paint(cols));
+  }
+
+  function paint([left, middle, side]) {
+    const [a, b, c] = box.children;
+    if (box.children.length === 3 && a.matches('.ex-venues') && b.matches('.ex-list') && c.matches('.ex-side')) {
+      window.Views.patch(a, left, render);
+      window.Views.patch(b, middle, render);
+      window.Views.patch(c, side, render);
+      return;
+    }
+    const keep = [...box.querySelectorAll('.ex-venues, .ex-list, .ex-side')].map((el) => el.scrollTop);
+    box.innerHTML = `<div class="ex-venues">${left}</div><div class="ex-list">${middle}</div><aside class="ex-side">${side}</aside>`;
     box.querySelectorAll('.ex-venues, .ex-list, .ex-side').forEach((el, i) => { el.scrollTop = keep[i] || 0; });
   }
 
@@ -252,6 +274,7 @@
     if (!b || b.dataset.db === sel) return;
     sel = b.dataset.db;
     render();
+    window.Views.reveal(box.querySelector('.ex-list'));  // on a phone (the columns stacked) the one picked, below the list
     loadDetail(sel);
   });
   window.addEventListener('liminal:view', (ev) => {

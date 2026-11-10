@@ -25,10 +25,10 @@
                disks and the data files (resources.js)
 
    Clicking Stock or Analysis again while it is showing hides or shows its side panel. A right click on a view's
-   icon offers to disable it (the library's menu.js): its icon leaves the rail until its switch in Preferences
-   enables it again (prefs.js), kept per profile.
+   icon, or a long press of a finger (the library's menu.js and touch.js, on every device), offers to disable it:
+   its icon leaves the rail until its switch in Preferences enables it again (prefs.js), kept per profile.
    Also: the cursor statistics box in the price window's upper right (on-screen max/min and the bar under the
-   cursor). */
+   cursor), and the views' redraws that neither break a tap nor interrupt typing (Views.redraw, Views.patch). */
 (() => {
   const { symbolIcon, icon, esc } = window.LiminalIcons;
   // The watchlist and the preferences sit beside whichever chart was showing (no chart content of their own).
@@ -74,8 +74,199 @@
     if (!on && document.body.dataset.pane === name) showPane('stock', { toggle: false });  // the view showing went: the chart
     window.dispatchEvent(new CustomEvent('liminal:views', { detail: { off: [...viewsOff] } }));
   }
+  // -- views drawn again without breaking a tap or a word being typed ---------------------------------------
+  // The user, 2026-11-10: "I want to support touch as well as mouse clicking on the interface ... We'll make sure it
+  // works across all apps"; "Support for virtual keyboard on tablets and phones". The views are drawn again on timers
+  // (Live every 1.5 s, Resources every 2 s, a plugin's page every 5 s): what a finger was on was replaced under it (its
+  // tap then came to nothing, what it pressed being gone), a fling stopped, and the field being typed in was replaced
+  // (the on-screen keyboard closed, a word being composed was cut).
+  //   Views.redraw(root, fn)       fn now, or once nothing presses on root (a finger, a pen or the mouse's button) and
+  //                                its tap's click has come, and no finger's scroll (its fling included) moves in it;
+  //                                the latest fn for a root wins
+  //   Views.patch(el, html, again) el's children drawn from html, each one only when its markup changed (a tap on one
+  //                                left as it was lands); the one holding the field typed in stays until it is left
+  //                                (again() then draws it); what is replaced keeps its scroll
+  //   Views.letGo(root)            a field still focused in root let go, before a redraw for the user's own pick (Safari
+  //                                keeps a field focused when a button is tapped: its part would be kept, Views.patch)
+  //   Views.ownScroll(e)           the scroll event a redraw caused (a part given back its place), not the user's
+  //   Views.ownPlace(el)           el's place, just given back by the view's own code, known as the page's (ownScroll)
+  //   Views.softKeyboard()         an on-screen keyboard is up now (a hardware keyboard's Enter does what it did)
+  //   Views.reveal(el)             on a phone (the columns stacked, below 700 px) el scrolled into view: what a pick changed
+  const presses = new Map();  // pointerId -> what it went down on
+  let lift = null;  // {target, timer}: a press just ended, its click still to come
+  let fling = null;  // {target, timer}: a finger's scroll still moving
+  const heldDraws = new Map();  // root -> the redraw waiting for it
+  let recheck = 0;  // while a redraw waits, a look every half second (a menu closed by Escape tells nobody)
+  const pressedIn = (root, t) => t instanceof Node && (root === document || root.contains(t));
+  const scrolledIn = (root, t) => t === document || !(t instanceof Node) || root === document || root.contains(t) || t.contains(root);
+  function busy(root) {
+    // a menu open (menu.js: a rail icon's, by a right click or a long press): nothing drawn again until it goes, for a
+    // part drawn again is given back its scroll, and a scroll closes the menu before its item can be picked
+    if (window.LiminalMenu?.shown) return true;
+    for (const t of presses.values()) if (pressedIn(root, t)) return true;
+    return (!!lift && pressedIn(root, lift.target)) || (!!fling && scrolledIn(root, fling.target));
+  }
+  function releaseDraws() {
+    for (const [root, fn] of [...heldDraws]) {
+      if (busy(root)) continue;
+      heldDraws.delete(root);
+      if (root === document || root.isConnected) {
+        try { fn(); } catch (err) { setTimeout(() => { throw err; }); }  // the other views' redraws go on
+      }
+    }
+    if (!heldDraws.size && recheck) { clearInterval(recheck); recheck = 0; }
+  }
+  function redraw(root, fn) {
+    const r = root || document;
+    if (busy(r)) {
+      heldDraws.set(r, fn);
+      if (!recheck) recheck = setInterval(releaseDraws, 500);
+      return false;
+    }
+    heldDraws.delete(r);
+    fn();
+    return true;
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (e.isTrusted && (e.pointerType !== 'mouse' || e.button === 0)) presses.set(e.pointerId, e.target);
+  }, { capture: true, passive: true });
+  // A choice made in a picker's own popup (a select's list: Chrome's takes the mouse button's release, and the page
+  // never hears it): its press is over, and the redraw the choice asks for is not held until the mouse moves again
+  document.addEventListener('change', (e) => {
+    if (!e.isTrusted) return;  // a script's (Preferences passing a pick to the toolbar's hidden picker)
+    let ended = false;
+    for (const [id, t] of [...presses]) {
+      if (t instanceof Node && e.target instanceof Node && e.target.contains(t)) { presses.delete(id); ended = true; }
+    }
+    if (ended) setTimeout(releaseDraws, 0);
+  }, true);
+  function pressEnded(e) {
+    if (!presses.has(e.pointerId)) return;
+    const target = presses.get(e.pointerId);
+    presses.delete(e.pointerId);
+    clearTimeout(lift?.timer);
+    // its click comes after the lift (on a phone a moment later); a press a scroll took has none, but its scroll's
+    // first moves come a frame or two later (then the fling holds what it moves)
+    lift = { target, timer: setTimeout(() => { lift = null; releaseDraws(); }, e.type === 'pointerup' ? 350 : 150) };
+  }
+  document.addEventListener('pointerup', pressEnded, true);
+  document.addEventListener('pointercancel', pressEnded, true);
+  document.addEventListener('pointermove', (e) => {  // a mouse's button let go where the page did not hear it
+    if (e.pointerType === 'mouse' && e.buttons === 0 && presses.has(e.pointerId)) pressEnded({ type: 'pointercancel', pointerId: e.pointerId });
+  }, { capture: true, passive: true });
+  window.addEventListener('click', () => {  // the tap's click: what waited is drawn once the click's own handlers ran
+    if (!lift) return;
+    clearTimeout(lift.timer);
+    lift = null;
+    setTimeout(releaseDraws, 0);
+  }, true);
+  window.addEventListener('blur', () => { presses.clear(); releaseDraws(); });
+  document.addEventListener('scroll', (e) => {  // a finger's scroll, and its fling: nothing in it drawn again until it stops
+    const by = window.LiminalTouch?.lastInput;
+    if ((by !== 'touch' && by !== 'pen') || ownScroll(e)) return;
+    clearTimeout(fling?.timer);
+    fling = { target: e.target, timer: setTimeout(() => { fling = null; releaseDraws(); }, 250) };
+  }, { capture: true, passive: true });
+
+  const drawnAs = new WeakMap();  // an element -> its markup when drawn: drawn again alike, it is left as it is
+  const SCROLLERS = '.table-wrap, .act-log, .pl-log, .ds-list, .w-wrap, .w-addlist, .l2-wrap';
+  const markupOf = (n) => (n.nodeType === 1 ? n.outerHTML : n.textContent);
+  const shown = (n) => n.nodeType === 1 || (n.nodeType === 3 && n.data.trim() !== '');
+  const sameKind = (a, b) => a.nodeType === 1 && b.nodeType === 1 && a.localName === b.localName && a.className === b.className;
+  const scrollsOf = (el) => [el, ...el.querySelectorAll(SCROLLERS)].map((x) => [x.scrollLeft, x.scrollTop]);
+  // The places redraws gave back (a scroller -> [left, top]): the scroll event that follows is the page's own, which
+  // hides no reading (resources.js) and holds no redraw as a finger's fling would
+  const gaveBack = new WeakMap();
+  function ownPlace(el) { gaveBack.set(el, [el.scrollLeft, el.scrollTop]); }
+  function scrollBack(el, left, top) {
+    const was = [el.scrollLeft, el.scrollTop];
+    if (left != null && el.scrollLeft !== left) el.scrollLeft = left;
+    if (top != null && el.scrollTop !== top) el.scrollTop = top;
+    if (el.scrollLeft !== was[0] || el.scrollTop !== was[1]) ownPlace(el);
+  }
+  function ownScroll(e) {  // the scroll event of a place a redraw gave back: its scroller still there (a user's moves it)
+    const t = e?.target, at = t instanceof Element ? gaveBack.get(t) : null;
+    return !!at && Math.abs(t.scrollLeft - at[0]) < 1 && Math.abs(t.scrollTop - at[1]) < 1;
+  }
+  function putScrolls(el, at) {  // by their place in it: the element, then its scrollers in order
+    [el, ...el.querySelectorAll(SCROLLERS)].forEach((x, i) => {
+      const [left, top] = at[i] || [0, 0];
+      scrollBack(x, left || null, top || null);
+    });
+  }
+  function patch(el, html, again) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const nodes = [...tpl.content.childNodes];
+    const next = nodes.filter(shown);
+    const old = [...el.childNodes].filter(shown);
+    const touch = window.LiminalTouch;
+    const typed = touch?.typing(el) ? old.find((n) => n.nodeType === 1 && touch.typing(n)) || null : null;
+    const later = () => { if (typed && again) touch.whenIdle(typed, again); };
+    if (old.length === next.length && old.every((n, i) => n.nodeType === next[i].nodeType)) {
+      next.forEach((n, i) => {
+        const o = old[i], markup = markupOf(n);
+        if (drawnAs.get(o) === markup) return;  // as it was: left as it is
+        if (o === typed) { later(); return; }  // the field typed in stays; drawn again once it is left
+        if (o.nodeType === 3) { o.textContent = n.textContent; drawnAs.set(o, markup); return; }
+        const at = sameKind(o, n) ? scrollsOf(o) : null;
+        o.replaceWith(n);
+        drawnAs.set(n, markup);
+        if (at) putScrolls(n, at);
+      });
+      return;
+    }
+    if (typed) {  // drawn otherwise: around the element typed in, which stays where it is (moved, it loses the focus)
+      const j = nodes.findIndex((n) => sameKind(n, typed));
+      later();
+      if (j < 0) return;  // no place for it in the new: drawn whole once it is left
+      for (const n of [...el.childNodes]) if (n !== typed) n.remove();
+      typed.before(...nodes.slice(0, j));
+      typed.after(...nodes.slice(j + 1));
+      for (const n of [...nodes.slice(0, j), ...nodes.slice(j + 1)]) if (shown(n)) drawnAs.set(n, markupOf(n));
+      return;
+    }
+    const at = scrollsOf(el);
+    const marks = next.map(markupOf);
+    el.replaceChildren(tpl.content);
+    next.forEach((n, i) => drawnAs.set(n, marks[i]));
+    putScrolls(el, at);
+  }
+
+  // The user's own pick (another plugin, venue or product): the field still focused in root is let go first, so the
+  // page is drawn for what was picked (the part holding a field typed in is kept as it was, Views.patch: it would show
+  // the plugin left under the one picked, and a key typed there go to the plugin left)
+  function letGo(root) {
+    const f = document.activeElement;
+    if (f && f !== document.body && root?.contains(f) && window.LiminalTouch?.isTextField?.(f)) f.blur();
+  }
+
+  // An on-screen keyboard up now (Enter in a filter puts it away, so what it found shows; a field saved from it is not
+  // focused again, which would call it up unasked): touch.js's keyboardOpen (Safari lays it over the page), or the
+  // window that much shorter than before a field took the focus (Chrome makes room above it). A hardware keyboard, a
+  // 2-in-1's cover's included, shows none on the screen: its Enter does what it did.
+  let winTall = innerHeight, winWide = innerWidth;  // the window while no field is typed in
+  const fieldFocused = () => !!window.LiminalTouch?.isTextField?.(document.activeElement);
+  const measureWindow = () => { if (!fieldFocused() || innerWidth !== winWide) { winTall = innerHeight; winWide = innerWidth; } };
+  window.addEventListener('resize', measureWindow);
+  document.addEventListener('focusout', () => setTimeout(measureWindow, 0), true);
+  function softKeyboard() {
+    const t = window.LiminalTouch;
+    if (!t || (t.lastInput !== 'touch' && t.lastInput !== 'pen')) return false;
+    return !!t.keyboardOpen || (innerWidth === winWide && innerHeight < winTall - 120);
+  }
+
+  // Phones (below 700 px a view's columns stack, views-touch.css): what a pick changed lies below what was tapped, out
+  // of sight; it is brought into view (the plugin, venue or database picked, a product's insight). Larger screens: as is.
+  const stacked = window.matchMedia ? window.matchMedia('(max-width: 700px)') : null;
+  function reveal(el) {
+    if (!el || !stacked?.matches) return false;
+    el.scrollIntoView({ block: 'start', inline: 'nearest' });
+    return true;
+  }
+
   window.Views = { list: () => RAIL_VIEWS.map(([name, title, ic]) => ({ name, title, icon: ic, on: viewOn(name), fixed: FIXED.has(name) })),
-                   on: viewOn, set: setViewOn };
+                   on: viewOn, set: setViewOn, redraw, patch, letGo, ownScroll, ownPlace, softKeyboard, reveal };
 
   // -- rail --------------------------------------------------------------------------------
   function showPane(name, { toggle = true } = {}) {
@@ -123,6 +314,8 @@
   }
 
   const RAIL_ICON = 32;  // px; the buttons (style.css #rail) leave room around it
+  // the words a tooltip says to act by: a finger's beside the mouse's where the device has a touch screen
+  const pressWord = () => (window.LiminalTouch?.touch ? 'Click or tap' : 'Click');
 
   function renderRailIcons(activity) {
     // the symbol's logo, the front of the card the throbber turns while it updates (throbber.js)
@@ -170,7 +363,10 @@
     const b = e.target.closest('button[data-pane]');
     if (b) showPane(b.dataset.pane);
   });
-  // a right click on a view's icon: Disable (Stock's, Preferences', the profile's and a bound app's keep the browser's menu)
+  // a right click on a view's icon: Disable (Stock's, Preferences', the profile's and a bound app's keep the browser's menu).
+  // A finger's long press comes here too, as a right click (menu.js on '#rail button': a contextmenu at the finger), on
+  // every device, Safari's included; the menu's head then says the icon's own words (its title: the Fetcher's run, the
+  // Live feeds' streams), which no finger can hover, and where no menu opens the icon's words show in a bubble (touch.js).
   document.getElementById('rail').addEventListener('contextmenu', (e) => {
     const b = e.target.closest('button[data-pane]');
     const view = b && RAIL_VIEWS.find(([name]) => name === b.dataset.pane);
@@ -222,7 +418,7 @@
         const r = await fetch('/login/api/status');
         const st = r.ok ? await r.json() : null;
         const b = document.getElementById('railBound-login-login');
-        if (b && st) b.title = st.signedIn ? `Login: signed in as ${st.name}` : 'Login: not signed in. Click to sign in or create an account.';
+        if (b && st) b.title = st.signedIn ? `Login: signed in as ${st.name}` : `Login: not signed in. ${pressWord()} to sign in or create an account.`;
       } catch (e) { /* the login app is away */ }
     };
     refresh();
@@ -230,14 +426,21 @@
   }
   if (!window.FETCHER_MODE) drawBoundTrays();
   // The rail's foot: the signed-in profile (its initial); a click signs out to the login page, where
-  // another is picked or made.
+  // another is picked or made. A finger's tap asks first (the user, 2026-11-10: on touch screens a tap on the profile
+  // initial asks before signing out): a finger brushing the rail's foot while scrolling it signed out at once. A
+  // mouse's click and the keyboard's Enter sign out as they did.
+  let profileName = '';
   fetch('/api/profiles').then((r) => r.json()).then(({ profiles = [], current }) => {
     const me = profiles.find((p) => p.id === current);
     if (!me) return;
+    profileName = me.name;
     $('railProfile').textContent = me.name.slice(0, 1).toUpperCase();
-    $('railProfile').title = `Profile: ${me.name}. Click to switch to another profile.`;
+    $('railProfile').title = `Profile: ${me.name}. ${pressWord()} to switch to another profile.`;
   }).catch(() => {});
   $('railProfile').addEventListener('click', async () => {
+    const by = window.LiminalTouch?.lastInput;
+    if ((by === 'touch' || by === 'pen')
+      && !window.confirm(`Sign out${profileName ? ` of ${profileName}` : ''} and go to the sign-in page to pick another profile?`)) return;
     try {
       // markups not saved yet go first, as when the page closes: signed out, they went as the first
       // profile's and were refused (no such layout), lost
@@ -346,6 +549,19 @@
     + `${b.wide % 60000 ? `${b.wide / 1000} s` : `${b.wide / 60000} min`} bar</span>` : '');
   const isPrice = () => state.model.kind === 'price';
   const e = window.LiminalIcons.esc;
+  // What the bar's tags mean (the box's derived*, interpolated* ...), under the Analysis panel's bar on a touch screen:
+  // their tooltips are a mouse's, and the box on the chart takes no pointer at all (the user, 2026-11-10: what a tag
+  // means becomes visible text on touch screens)
+  function tagNote(b) {
+    const words = [];
+    const wide = b.wide % 60000 ? `${b.wide / 1000}-second` : `${b.wide / 60000}-minute`;
+    if (b.wide) words.push(`${b.wide % 60000 ? `${b.wide / 1000} s` : `${b.wide / 60000} min`} bar: no ${state.period?.span || 1}-${state.period?.type || 'second'} data here, the ${wide} bar drawn as wide as its time`);
+    if (b.interp) words.push("interpolated*: no data at this interval here; a line between the 1-minute bars' volume-weighted prices");
+    else if (b.hist) words.push('monthly avg*: monthly history from a dataset (the chip beside the interval says which, and how it agrees with the feed), a monthly average of daily closes, flat at its value');
+    else if (b.derived) words.push('derived*: built here from finer data; no feed sent this candle at this interval');
+    if (b.q1 != null && state.approximate) words.push(`Q1*, Med*, Q3*: ${state.approximate}`);
+    return words.length ? `<div class="p-muted small touch-only cursor-tags">${words.map((w) => `<div>${e(w)}</div>`).join('')}</div>` : '';
+  }
   // The box sits in the price window's upper right corner, below the roll labels of continuous futures.
   function renderCursor() {
     const s = cursorStats();
@@ -385,7 +601,7 @@
           ['Max', `${priceText(s.hi?.high)} <small>${s.hi ? e(t(barTime(s.hi))) : ''}</small>`],
           ['Min', `${priceText(s.lo?.low)} <small>${s.lo ? e(t(barTime(s.lo))) : ''}</small>`],
           ['Max − min', priceText(s.hi && s.lo ? s.hi.high - s.lo.low : null)],
-        ])}`;
+        ])}${tagNote(b)}`;
     }
   }
   window.renderCursor = renderCursor;
@@ -401,6 +617,22 @@
   });
   chart.subscribeAction('onVisibleRangeChange', scheduleCursor);
   document.getElementById('chart').addEventListener('mouseleave', () => { cursorIndex = null; scheduleCursor(); });
+  // A finger's crosshair (the library's long press) stays when the finger lifts, and the library takes it away again on
+  // a tap elsewhere on the chart without a word (it says onCrosshairChange only of a crosshair shown): the box and the
+  // Analysis panel then go back to the newest bar, as when a mouse leaves the chart. Its crosshair still shown (a tap
+  // outside the chart leaves it), they keep its bar.
+  function crossGone() {
+    let c = null;
+    try { c = chart.getChartStore?.()?.getCrosshair?.(); } catch (err) { return false; }
+    return !!c && !(c.paneId != null && Number.isFinite(c.x));  // not known (another version of the library): as it is
+  }
+  const afterFinger = (ev) => {
+    if (ev.pointerType !== 'touch' && ev.pointerType !== 'pen') return;
+    setTimeout(() => { if (cursorIndex != null && crossGone()) { cursorIndex = null; scheduleCursor(); } }, 80);
+  };
+  for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
+    document.getElementById('chart').addEventListener(type, afterFinger, { passive: true });
+  }
 
   // -- start --------------------------------------------------------------------------
   renderRailIcons(null);

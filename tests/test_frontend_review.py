@@ -231,11 +231,20 @@ def test_projected_times_move_on_with_a_new_bar_instead_of_being_asked_again():
     assert "if (fut.ask !== ask) return;" in _inner(axis, "ensure")  # a page counted from the bar before is dropped
 
 
-def test_filter_boxes_keep_the_caret_where_it_was():
-    for name in ("news.js", "gov.js"):
+def test_filter_boxes_are_never_drawn_again_while_typed_in():
+    """The filter boxes keep the caret by never being drawn again: only their results are (the user, 2026-11-10: "Support
+    for virtual keyboard on tablets and phones"; a box drawn again under a phone's keyboard broke the word being typed)."""
+    for name, box_id in (("news.js", "newsSearch"), ("gov.js", "govSearch")):
         src = _js(name)
-        assert "const { selectionStart: from, selectionEnd: to } = e.target;" in src, name
-        assert "box.setSelectionRange(from, to);" in src, name
+        tag = src.split(f'<input id="{box_id}"', 1)[1].split(">", 1)[0]
+        assert "value=" not in tag, name
+        assert "${kb('search')}" in tag, name
+        assert "window.Views.patch(box, html, render);" in src, name
+        assert ".focus(" not in src and "setSelectionRange" not in src, name
+        assert f"e.target.id === '{box_id}' && window.Views.softKeyboard()) e.target.blur();" in src, name
+    panels = _js("panels.js")
+    assert "if (drawnAs.get(o) === markup) return;  // as it was: left as it is" in panels
+    assert "if (o === typed) { later(); return; }" in panels
 
 
 def test_a_dataset_picked_meanwhile_keeps_its_own_series_list():
