@@ -302,7 +302,7 @@ liminal-integrator"; "all lib calls will point to liminal-libs".
   `sys.path`, its version from the pyproject, origin `plugins/<checkout>`; the same plugin installed
   as a package besides is not loaded twice; LIMINAL_PLUGINS names another folder). Without the
   workspace nothing changes: the data in ~/LiminalData, the plugins as installed packages. On the
-  user's PC: `C:\Users\ciara\source\liminal\` (the junction of old replaced by the folder).
+  user's PC: `%USERPROFILE%\source\liminal\` (the junction of old replaced by the folder).
 
 ## The library's classes (2026-11-03)
 
@@ -683,7 +683,7 @@ A plugin that fails to load is left out and reported (`plugins`), never fatal.
      (install, entry point, version shown, its tests, its CI) before the others. Done 2026-10-31:
      [plugin-integrator-cboe](https://github.com/pcxmac-dev/plugin-integrator-cboe) 1.2.0, its plan
      and caps out of `config.PUBLIC_FEEDS` into it, `sources/plugins/cboe.py` gone; here it is
-     installed editable from its clone beside the app's (`C:\Users\ciara\source\plugin-integrator-cboe`).
+     installed editable from its clone beside the app's (`%USERPROFILE%\source\plugin-integrator-cboe`).
   4. *Then each of the others* (the user, 2026-11-01: "all the plugins should be plugin-integrator-xxxx
      and have a separate repo"), the same way, one at a time: `plugin-integrator-bitstamp` 1.3.0
      (2026-11-01, its trade stream with it); `plugin-integrator-coinbase` 1.3.0 and

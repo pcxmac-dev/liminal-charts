@@ -36,7 +36,7 @@ Working notes so work can resume in a fresh session. Newest first.
   `~/.liminal/`), the MongoDB database `liminal`, the write header `X-Liminal-Charts`, the
   browser's saved settings under `liminal:` (moved from `massive:` once, by app.js), the chart
   app's title "Liminal Charts", the scheduled tasks `LiminalSync` and `LiminalCharts`, the
-  repository `pcxmac-dev/liminal` and its folder `C:\Users\ciara\source\liminal`, the plugin
+  repository `pcxmac-dev/liminal` and its folder `%USERPROFILE%\source\liminal`, the plugin
   packages `plugin-integrator-<name>`. Kept: the Massive data provider's names (the plugin `massive`,
   `MASSIVE_API_KEY`, `MASSIVE_TIER*`, `MASSIVE_RPM`, `MASSIVE_BASE_URL`, its caps, `feeds/massive.db`).
   `tests/test_names.py` keeps the app free of the old names and the old settings read.
