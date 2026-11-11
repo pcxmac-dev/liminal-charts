@@ -33,7 +33,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from liminal_libs import config
-from liminal_libs.apps import Binding, Scope, forward, start_app, wait_for
+from liminal_libs.apps import PAIRS_PATH, Binding, Scope, forward, inherited_by, pairs_wanted, start_app, wait_for
 from liminal_libs.apps.login import DEFAULT_URL as LOGIN_URL
 from liminal_libs.apps.login import URL_VAR as LOGIN_URL_VAR
 from liminal_libs.logs import log_to
@@ -78,11 +78,13 @@ def start_integrator(db_path: Path, port: int, log=print) -> bool:
     return True
 
 
-def start_login(port: int, log=print) -> bool:
+def start_login(port: int, log=print, url: str = "") -> bool:
     """Start the login app's server for this front (`liminal-login serve --no-browser --port PORT
-    --until-quiet`, for the charts app: its users' namespace, LIMINAL_LOGIN_FOR). False: the login
-    app is not installed (liminal-login)."""
-    env = {"LIMINAL_LOGIN_FOR": "charts"}
+    --until-quiet`), inherited by the charts app (the user, 2026-11-10: "when its inherited it can point to
+    it's superclass"): the login on its own knows no app, so the front says who inherits it (charts: its
+    users' folder there), how its page names it, and where the front answers the pairs the charts app's
+    plugins ask for (`url`, this front's address). False: the login app is not installed (liminal-login)."""
+    env = inherited_by("charts", "Liminal Charts", url)
     scope = Scope.find()  # the login's own file, read the same way by every app (liminal-login.cfg): what it is tied to
     if scope is not None and scope.path is not None:
         env["LIMINAL_LOGIN_CFG"] = str(scope.path)
@@ -103,6 +105,7 @@ class Front:
         self._lock = threading.Lock()
         self._port: int | None = None  # the integrator's port answered at last
         self._login: str | None = None  # the login app's URL answered at last
+        self.url = ""  # this front's own address once served: where the login it starts asks for the plugins' pairs
 
     @property
     def connected(self) -> bool:
@@ -149,7 +152,7 @@ class Front:
             if bound.reachable():
                 return bound
             self._login = None
-            if not start_login(bound.port, self.log):
+            if not start_login(bound.port, self.log, url=self.url):
                 return None
             if wait_for(bound.port, START_SECONDS):
                 self._login = url
@@ -161,6 +164,16 @@ class Front:
     def bound(self, name: str) -> Binding | None:
         """A bound app by name, answering (started if need be), or None."""
         return self.login() if name == "login" else None
+
+    def login_pairs(self) -> list[dict]:
+        """The pairs the charts app's plugins ask for (the stock-data plugins and the assistants installed beside it),
+        what the login this front inherits asks it (GET /api/login/pairs; liminal_libs.apps.pairs_wanted): the login
+        knows no plugin itself."""
+        try:
+            from liminal_libs.sources.registry import assistants, providers, publishers
+        except Exception:  # noqa: BLE001 - no registry here: none to say
+            return []
+        return pairs_wanted([*providers().values(), *publishers().values(), *assistants().values()])
 
     def signed_in(self, cookies: str | None) -> bool | None:
         """Whether the browser sending `cookies` is signed in to the login app (asked with those
@@ -235,6 +248,10 @@ def make_front_handler(front: Front):
                 if self._from_this_app():
                     self._ui("GET")
                 return
+            if path == PAIRS_PATH:  # the login this front inherits asks which pairs the charts app's plugins ask for
+                if self._from_this_app():
+                    self._json({"pairs": front.login_pairs()})
+                return
             if path.startswith("/api/"):
                 if self._from_this_app():
                     self._proxy("GET")
@@ -301,8 +318,8 @@ def make_front_handler(front: Front):
                 return self._json({"error": f"the integrator is not running (none answers, none could be started): "
                                             f"{front.name} has no data to show; see logs/liminal.log"},
                                   HTTPStatus.SERVICE_UNAVAILABLE)
-            forward(self, method, f"http://127.0.0.1:{port}", self.path, drop_cookies=("liminal_login_",),
-                    unavailable="the integrator does not answer; ask again shortly")  # the login's session stays here
+            forward(self, method, f"http://127.0.0.1:{port}", self.path, drop_cookies=("liminal_login",),
+                    unavailable="the integrator does not answer; ask again shortly")  # a login's session stays here
 
         def _bound(self, method: str, name: str) -> None:
             """The request passed on to the app bound under /<name>/, its answer and its cookies
@@ -348,6 +365,7 @@ def serve_front(db_path: Path, port: int = 8765, open_browser: bool = True, log=
     except OSError:
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_front_handler(front))  # port taken: pick a free one
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    front.url = url.rstrip("/")  # what the login it inherits is told: where to ask for the plugins' pairs
     log(f"front: the chart's page at {url}, its data through the integrator")
     print(f"chart app running at {url}, its data through the integrator  (Ctrl+C to stop)", flush=True)
     if open_browser:

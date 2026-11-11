@@ -101,6 +101,8 @@ def test_the_front_funnels_its_pages_requests_to_the_integrator(tmp_path, monkey
         j = json.loads(_get(port, "/api/echo", {"Cookie": "liminal_login_charts=tok; mc_profile=3"})[1])
         assert j["cookie"] == "mc_profile=3"
         assert json.loads(_get(port, "/api/echo", {"Cookie": "liminal_login_charts=tok"})[1])["cookie"] is None
+        # nor a login's of its own (a login on its own, at another port of this machine: cookies ignore ports)
+        assert json.loads(_get(port, "/api/echo", {"Cookie": "liminal_login=own; mc_profile=3"})[1])["cookie"] == "mc_profile=3"
         assert j["host"] == f"127.0.0.1:{upstream.server_address[1]}"
         assert r.getheader("Set-Cookie") == "mc_profile=7; Path=/"  # the integrator's cookie passed back
         assert front.connected and any("connected to the integrator" in m for m in lines)
@@ -143,7 +145,7 @@ def test_the_front_binds_the_login_app_under_its_prefix_and_draws_its_tray(tmp_p
     monkeypatch.setenv("LIMINAL_FETCHER_PORT", "none")
     monkeypatch.setenv("LIMINAL_LOGIN_URL", f"http://127.0.0.1:{upstream.server_address[1]}/")
     real_start_login = front_mod.start_login
-    monkeypatch.setattr(front_mod, "start_login", lambda port, log=print: pytest.fail("nothing to start"))
+    monkeypatch.setattr(front_mod, "start_login", lambda port, log=print, url="": pytest.fail("nothing to start"))
     lines: list[str] = []
     front = Front(tmp_path / "liminal.db", log=lines.append)
     srv = ThreadingHTTPServer(("127.0.0.1", 0), make_front_handler(front))
@@ -193,7 +195,7 @@ def test_the_front_binds_the_login_app_under_its_prefix_and_draws_its_tray(tmp_p
     started: list = []
     up: list = []
 
-    def start_login(port, log=print):
+    def start_login(port, log=print, url=""):
         started.append(port)
         srv = ThreadingHTTPServer(("127.0.0.1", port), Upstream)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -204,7 +206,7 @@ def test_the_front_binds_the_login_app_under_its_prefix_and_draws_its_tray(tmp_p
     assert front.login().port == free and started == [free] and front.login().port == free and started == [free]
     up[0].shutdown()
     up[0].server_close()
-    monkeypatch.setattr(front_mod, "start_login", lambda port, log=print: False)
+    monkeypatch.setattr(front_mod, "start_login", lambda port, log=print, url="": False)
     assert front.login() is None and front.trays() == []
     # the start itself: the login's module, no window, until quiet (the module stood in for: CI has no login app)
     import sys
@@ -214,9 +216,12 @@ def test_the_front_binds_the_login_app_under_its_prefix_and_draws_its_tray(tmp_p
     popen: list = []
     monkeypatch.setattr(binding_mod.subprocess, "Popen", lambda args, **kw: popen.append((args, kw)))
     monkeypatch.setitem(sys.modules, "liminal_login", types.ModuleType("liminal_login"))
-    assert real_start_login(8795, lines.append) is True
+    assert real_start_login(8795, lines.append, url="http://127.0.0.1:8765") is True
     assert popen[0][0][1:] == ["-m", "liminal_login", "serve", "--no-browser", "--port", "8795", "--until-quiet"]
-    assert popen[0][1]["env"]["LIMINAL_LOGIN_FOR"] == "charts"  # its users' namespace: this app's
+    # the login on its own knows no app: the front says it inherits it, how it is named, where its plugins' pairs are
+    env = popen[0][1]["env"]
+    assert (env["LIMINAL_LOGIN_FOR"], env["LIMINAL_LOGIN_FOR_TITLE"], env["LIMINAL_LOGIN_FOR_URL"]) == (
+        "charts", "Liminal Charts", "http://127.0.0.1:8765")
     # the login's file, when there is one, goes with it: what the login is tied to (the user, 2026-11-06)
     from liminal_libs.apps import Scope
 
@@ -326,3 +331,36 @@ def test_the_gui_command_runs_the_front_unless_alone(tmp_path, monkeypatch):
     assert front_mod.config.setting("LIMINAL_NO_RESCAN") or __import__("os").environ.get("LIMINAL_NO_RESCAN") == "1"
     args = cli.build_parser().parse_args(["gui", "--alone", "--no-browser"])
     assert cli.cmd_gui(args, settings) == 0 and ran[-1] == ("alone", 8765)
+
+
+def test_the_front_tells_the_login_it_inherits_the_pairs_its_plugins_ask_for(tmp_path, monkeypatch):
+    """The login on its own knows no plugin (the user, 2026-11-10: "the log-in app should not point to platform,
+    integrator or charts"; "when its inherited it can point to it's superclass"): the front, which inherits it, answers
+    GET /api/login/pairs with the pairs the charts app's plugins ask for, named by their variables (the library's
+    pairs_wanted), and nothing of it goes to the integrator."""
+    from types import SimpleNamespace
+
+    from liminal_libs.sources import registry
+    from liminal_libs.sources.keys import KeyVar
+
+    acme = SimpleNamespace(name="acme", title="Acme", part_of=None, SYSTEM="integrator", keys=(KeyVar("ACME_API_KEY"),))
+    sage = SimpleNamespace(name="sage", title="Sage", part_of=None, SYSTEM="platform",
+                           keys=(KeyVar("SAGE_API_KEY"), KeyVar("SAGE_ACCOUNT", "account (email or name)", secret=False)))
+    monkeypatch.setattr(registry, "providers", lambda: {"acme": acme})
+    monkeypatch.setattr(registry, "publishers", lambda: {})
+    monkeypatch.setattr(registry, "assistants", lambda: {"sage": sage})
+    monkeypatch.setenv("LIMINAL_FETCHER_PORT", "none")  # nothing passed on: the front answers it itself
+    monkeypatch.setenv("LIMINAL_LOGIN_URL", "none")
+    front = Front(tmp_path / "liminal.db", log=lambda m: None)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_front_handler(front))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        status, body, _ = _get(srv.server_address[1], "/api/login/pairs")
+        pairs = json.loads(body)["pairs"]
+        assert status == 200 and [p["name"] for p in pairs] == ["acme-api-key", "sage-account", "sage-api-key"]
+        assert pairs[1] == {"name": "sage-account", "variable": "SAGE_ACCOUNT", "plugin": "sage", "title": "Sage",
+                            "label": "account (email or name)", "secret": False, "kind": "detail", "system": "platform"}
+        assert _get(srv.server_address[1], "/api/login/pairs", {"Origin": "http://evil.example"})[0] == 403
+    finally:
+        srv.shutdown()
+        srv.server_close()
