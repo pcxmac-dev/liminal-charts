@@ -37,8 +37,8 @@ class Upstream(BaseHTTPRequestHandler):
             return self._json(200, {"signedIn": "liminal_login_charts=tok" in cookie, "name": "ada" if "tok" in cookie else None,
                                     "users": 1, "for": "charts", "path": self.path, "cookie": self.headers.get("Cookie")})
         if self.path == "/api/tray":  # a bound app's tray (the login app's)
-            return self._json(200, {"app": "login", "icon": "user", "title": "Login",
-                                    "items": [{"id": "login", "icon": "user", "title": "Login", "kind": "app", "app": "login"}]})
+            return self._json(200, {"app": "login", "icon": "lambda", "title": "Login",
+                                    "items": [{"id": "login", "icon": "lambda", "title": "Login", "kind": "app", "app": "login"}]})
         if self.path.startswith("/api/stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -154,7 +154,7 @@ def test_the_front_binds_the_login_app_under_its_prefix_and_draws_its_tray(tmp_p
     try:
         status, body, _ = _get(port, "/api/trays")
         trays = json.loads(body)["trays"]
-        assert status == 200 and [t["app"] for t in trays] == ["login"] and trays[0]["items"][0]["icon"] == "user"
+        assert status == 200 and [t["app"] for t in trays] == ["login"] and trays[0]["items"][0]["icon"] == "lambda"
         assert any("connected to the login app" in m for m in lines)
         status, body, r = _get(port, "/login/api/status?x=1", {"Cookie": "liminal_login=tok", "X-Liminal-Session": "tok"})
         j = json.loads(body)
