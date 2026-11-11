@@ -492,7 +492,32 @@
     return setupHtml(p.name, p.keys || [], acct ? { id: acct.name, title: acct.title } : null);
   }
 
+  // -- what a plugin attaches to (liminal-libs 1.49.0, plugin API 2.2; the user, 2026-11-11: "each plugin should reflect
+  // the the API its attached to, and present links that provide documentation ... it should also expose more of what
+  // the API is about"): its APIs and its parts', each once, after what its page already shows, drawn by the library's
+  // apis.js (a "more of the API" box opened stays open when the page is drawn again)
+  function apisHtml(p, parts = []) {
+    // a server older than the cards sends no `apis` (the page's files are read from the checkout at each request): none
+    if (!window.LiminalApis || ![p, ...parts].some((e) => Array.isArray(e.apis))) return '';
+    const seen = new Map(), facts = {};
+    [p, ...parts].forEach((e) => {
+      (e.apis || []).forEach((a) => { if (!seen.has(a.name)) seen.set(a.name, a); });
+      Object.assign(facts, e.apiFacts || {});
+    });
+    const older = `Written for plugin API ${p.api || 'before 2.2'}: it does not say yet what it attaches to.`;
+    return window.LiminalApis.html([...seen.values()], facts, { owner: p.name, empty: seen.size ? '' : older });
+  }
+  const pubPartsOf = (p) => (data?.publishers || []).filter((q) => q.partOf === p.name && q.name !== p.name);
+  // where a key is made, a link when it is an https address
+  const signupHtml = (s) => {
+    const u = window.LiminalApis ? window.LiminalApis.safeUrl(s) : '';
+    return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(s)}</a>` : esc(s);
+  };
+
   function pubMainHtml(p) {
+    return pubBodyHtml(p) + apisHtml(p, pubPartsOf(p));
+  }
+  function pubBodyHtml(p) {
     if (p.parts.length) return `${(p.keys || []).length ? pubSetupHtml(p) : ''}${fetchingHtml(p.name)}${partsHtml(p)}${databasesHtml(p)}`;
     if (!p.feeds.length) {
       return `${fetchingHtml(p.name)}${datasetsHtml(p)}${databasesHtml(p)}${p.policy.terms ? `<h4>Terms</h4><div class="small">${esc(p.policy.terms)}</div>` : ''}`;
@@ -804,7 +829,7 @@
   }
 
   function aiMainHtml(p) {
-    return `${setupHtml(p.name, p.keys)}${p.ai.free ? `<div class="pl-warn">${esc(p.ai.free)}.</div>` : ''}${planHtml(p)}${optionsHtml(p)}${aiTablesHtml(p)}${aiLimitsHtml(p)}${aiConnectHtml(p)}${aiRecentHtml(p)}${aiTryHtml(p)}${databasesHtml(p)}`;
+    return `${setupHtml(p.name, p.keys)}${p.ai.free ? `<div class="pl-warn">${esc(p.ai.free)}.</div>` : ''}${planHtml(p)}${optionsHtml(p)}${aiTablesHtml(p)}${aiLimitsHtml(p)}${aiConnectHtml(p)}${aiRecentHtml(p)}${aiTryHtml(p)}${databasesHtml(p)}${apisHtml(p)}`;
   }
 
   function aiSideHtml(p) {
@@ -819,7 +844,7 @@
         ${tile('Model', esc((a.models.find((m) => m.id === a.model) || {}).title || a.model || '–'), `${esc(a.vendor)} · ${esc(a.plan || 'no plan')}`)}
       </div>
       <h4>Keys</h4>${keys}<div class="p-muted small">Set in Setup.</div>
-      ${p.signup ? `<div class="p-muted small">From ${esc(p.signup)}</div>` : ''}`;
+      ${p.signup ? `<div class="p-muted small">From ${signupHtml(p.signup)}</div>` : ''}`;
   }
 
   function mainHtml() {
@@ -829,7 +854,7 @@
     if (!p) return '<div class="empty">No plugin found.</div>';
     if (p.ai) return aiMainHtml(p);
     return `${setupHtml(p.name, p.keys)}${fetchingHtml(p.name)}${feedsHtml(p)}${planHtml(p)}${optionsHtml(p)}${limitsHtml(p)}${capabilitiesHtml(p)}${scanHtml(p)}
-      ${p.notes.length ? `<h4>Notes</h4>${p.notes.map((n) => `<div class="small">${esc(n)}</div>`).join('')}` : ''}${publishersHtml(p)}${databasesHtml(p)}`;
+      ${p.notes.length ? `<h4>Notes</h4>${p.notes.map((n) => `<div class="small">${esc(n)}</div>`).join('')}` : ''}${publishersHtml(p)}${databasesHtml(p)}${apisHtml(p, pubPartsOf(p))}`;
   }
 
   // -- right: its part in the delivery scheme, its usage, its keys ---------------------------
@@ -859,7 +884,7 @@
       ${first.length ? `<h4>What it delivers</h4><table class="act-table ex-mini"><tbody>${first.map(era).join('')}</tbody></table>` : ''}
       ${standby.length ? `<h4>Standing by for</h4><table class="act-table ex-mini"><tbody>${standby.map(era).join('')}</tbody></table>` : ''}
       <h4>Keys</h4>${keys}
-      ${p.signup ? `<div class="p-muted small">From ${esc(p.signup)}</div>` : ''}`;
+      ${p.signup ? `<div class="p-muted small">From ${signupHtml(p.signup)}</div>` : ''}`;
   }
 
   // Drawn again every 5 s while a plugin's fetching shows (every few seconds in a rescan, every minute else): the three

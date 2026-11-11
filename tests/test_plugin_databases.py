@@ -228,7 +228,7 @@ def test_the_plugins_command_and_view_point_each_plugin_to_its_databases(tmp_pat
 def test_the_page_shows_each_plugins_databases():
     js = (STATIC / "plugins.js").read_text(encoding="utf-8")
     assert "function databasesHtml(p)" in js and "<h4>Databases</h4>" in js
-    assert "${publishersHtml(p)}${databasesHtml(p)}`;" in js  # a feed plugin's, after its headlines
+    assert "${publishersHtml(p)}${databasesHtml(p)}${apisHtml(p, pubPartsOf(p))}`;" in js  # a feed plugin's, after its headlines, then its API
     assert "${partsHtml(p)}${databasesHtml(p)}`;" in js and "${readsHtml(p)}${databasesHtml(p)}`;" in js
     assert "${datasetsHtml(p)}${databasesHtml(p)}" in js
     assert "mongodb: 'MongoDB'" in js and "duckdb: 'DuckDB'" in js

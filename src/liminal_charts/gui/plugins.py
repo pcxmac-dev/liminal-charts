@@ -37,6 +37,7 @@ from dataclasses import replace
 
 from datetime import date, datetime
 
+from liminal_libs.sources import apis as apis_mod
 from liminal_libs.sources import providers
 from liminal_libs.sources.registry import (PLUGIN_API, assistants, database_row, errors, key_row, label, plugin_databases,
                                           plugin_feeds, plugin_keys, plugin_of, publisher_parts)
@@ -99,6 +100,9 @@ def _fold(entry: dict, feeds: list[dict]) -> dict:
            "notes": [*(f"{entry['label']}: {n}" if feeds else n for n in entry["notes"]),
                      *(f"{e['label']}: {n}" for e in feeds for n in e["notes"])],
            "options": list({o["name"]: o for e in every for o in e["options"]}.values()),
+           # what it attaches to, its feeds' too, each API once (plugin API 2.2: Tiingo's forex part on the same API)
+           "apis": list({a["name"]: a for e in every for a in e.get("apis", [])}.values()),
+           "apiFacts": {k: v for e in every for k, v in e.get("apiFacts", {}).items()},
            "delivery": [d for e in every for d in e["delivery"]],
            "watched": sum(e["watched"] for e in every), "load": round(sum(e["load"] for e in every), 3),
            "usage": {**entry["usage"], "today": sum(e["usage"]["today"] for e in every)}}
@@ -170,7 +174,7 @@ def _assistant_entry(p, store, settings, scans: dict, running: dict | None) -> d
     recent = store.evaluations(assistant=p.name, limit=RECENT_EVALUATIONS) if hasattr(store, "evaluations") else []
     entry = {
         "name": p.name, "title": p.title, "label": p.name, "about": p.about, "origin": p.origin, "version": p.version,
-        "api": p.api, "signup": p.signup, "group": GROUPS[2], "archive": False, "kind": "assistant",
+        "api": p.api, "apis": apis_mod.as_dicts(p.apis), "apiFacts": apis_mod.facts_of(p), "signup": p.signup, "group": GROUPS[2], "archive": False, "kind": "assistant",
         "assets": [], "keyless": [], "serves": [], "configured": keys_set, "keysSet": keys_set,
         "keys": [key_row(k, settings) for k in p.keys], "publishers": [],
         "state": "scanning" if scanning else state, "kill": None,
@@ -237,6 +241,7 @@ def view(store, settings, feeds: dict, scheme, scans: dict, running: dict | None
         entries[name] = {
             "name": name, "title": p.title, "label": label(name), "about": p.about, "origin": p.origin,
             "version": p.version, "api": p.api,
+            "apis": apis_mod.as_dicts(p.apis), "apiFacts": apis_mod.facts_of(p),  # what it attaches to (plugin API 2.2)
             "signup": p.signup,
             "group": GROUPS[0] if p.keys else GROUPS[1], "archive": p.archival, "kind": p.kind,
             "assets": sorted(p.assets), "keyless": sorted(p.keyless), "serves": served,

@@ -23,16 +23,18 @@ BUILT_IN: list[str] = []  # none left in sources/plugins/ (2026-11-01): every pr
 # Released on their own (pyproject.toml: the `plugins` extra) and installed beside the app: the suite
 # sees them as the user's app does (tests/conftest.py), each with its distribution's version.
 PACKAGED = {  # name: (its distribution's version, the contract it needs, its entry point's value)
-    # every plugin a class on plugin API 2.0 at 0.2.0 (the user, 2026-11-03: "after the rewrite, lets go to version 0.2.0")
-    "bitstamp": ("0.2.0", "2.0", "plugin_integrator_bitstamp:PLUGIN"), "coinbase": ("0.2.0", "2.0", "plugin_integrator_coinbase:PLUGIN"),
-    "bitfinex": ("0.2.0", "2.0", "plugin_integrator_bitfinex:PLUGIN"),
-    "cboe": ("0.2.0", "2.0", "plugin_integrator_cboe"), "cboefutures": ("0.2.0", "2.0", "plugin_integrator_cboe"),
-    "tiingo": ("0.2.0", "2.0", "plugin_integrator_tiingo"), "tiingofx": ("0.2.0", "2.0", "plugin_integrator_tiingo"),
-    "alpaca": ("0.2.0", "2.0", "plugin_integrator_alpaca"), "boats": ("0.2.0", "2.0", "plugin_integrator_alpaca"),
-    "massive": ("0.2.0", "2.0", "plugin_integrator_massive"), "twse": ("0.2.0", "2.0", "plugin_integrator_twse"),
-    "b3": ("0.2.0", "2.0", "plugin_integrator_b3"),
-    "alphavantage": ("0.2.0", "2.0", "plugin_integrator_alphavantage"), "jquants": ("0.2.0", "2.0", "plugin_integrator_jquants"),
-    "twelvedata": ("0.2.0", "2.0", "plugin_integrator_twelvedata")}
+    # every plugin a class on plugin API 2.0 at 0.2.0 (the user, 2026-11-03: "after the rewrite, lets go to version 0.2.0"),
+    # 0.3.0 on plugin API 2.2 since 2026-11-11: each says what it attaches to (the user: "each plugin should reflect the
+    # the API its attached to, and present links that provide documentation")
+    "bitstamp": ("0.3.0", "2.2", "plugin_integrator_bitstamp:PLUGIN"), "coinbase": ("0.3.0", "2.2", "plugin_integrator_coinbase:PLUGIN"),
+    "bitfinex": ("0.3.0", "2.2", "plugin_integrator_bitfinex:PLUGIN"),
+    "cboe": ("0.3.0", "2.2", "plugin_integrator_cboe"), "cboefutures": ("0.3.0", "2.2", "plugin_integrator_cboe"),
+    "tiingo": ("0.3.0", "2.2", "plugin_integrator_tiingo"), "tiingofx": ("0.3.0", "2.2", "plugin_integrator_tiingo"),
+    "alpaca": ("0.3.0", "2.2", "plugin_integrator_alpaca"), "boats": ("0.3.0", "2.2", "plugin_integrator_alpaca"),
+    "massive": ("0.3.0", "2.2", "plugin_integrator_massive"), "twse": ("0.3.0", "2.2", "plugin_integrator_twse"),
+    "b3": ("0.3.0", "2.2", "plugin_integrator_b3"),
+    "alphavantage": ("0.3.0", "2.2", "plugin_integrator_alphavantage"), "jquants": ("0.3.0", "2.2", "plugin_integrator_jquants"),
+    "twelvedata": ("0.3.0", "2.2", "plugin_integrator_twelvedata")}
 TIINGO_BOATS = "tiingoboats"  # Tiingo's Blue Ocean feed, live: its package's
 IEX_FEED = "iex"  # Alpaca's IEX stream, live: its package's
 FEEDS = ["massive", "alpaca", "boats", "bitstamp", "coinbase", "bitfinex", "cboe", "cboefutures", "tiingo", "tiingofx",
@@ -228,13 +230,13 @@ def test_every_plugin_is_versioned_for_this_apps_contract():
     # too; Federal declares the SEC's GOV_CONTACT and the CFTC's dataset (1.4), as the dataset
     # libraries their datasets; Federal's feeds their parsers (1.7); Massive's headlines are released
     # with Massive, which declares where they are (1.8: the main file's news)
-    want = {"massive-news": ("0.2.0", "2.0"),  # Massive's headlines: released with Massive's package
+    want = {"massive-news": ("0.3.0", "2.2"),  # Massive's headlines: released with Massive's package
             **{n: (v, a) for n, (v, a, _) in PACKAGED.items()},  # the packages: their distributions' versions
-            **dict.fromkeys(("federal", "fed", "nyfed", "sec", "bls", "fedreg", "cftc"), ("0.2.0", "2.0")),  # its package's
-            "french": ("0.2.0", "2.0"), "datahub": ("0.2.0", "2.0")}  # the dataset libraries: packages too
+            **dict.fromkeys(("federal", "fed", "nyfed", "sec", "bls", "fedreg", "cftc"), ("0.3.0", "2.2")),  # its package's
+            "french": ("0.3.0", "2.2"), "datahub": ("0.3.0", "2.2")}  # the dataset libraries: packages too
     assert {p.name: (p.version, p.api) for p in plugins_} == want
     assert all(registry.api_refusal(p.api, record=p.is_record) is None for p in plugins_)
-    assert registry.PLUGIN_API == "2.1" and registry.RECORD_API == "1.12"  # the classes' contract, the records'
+    assert registry.PLUGIN_API == "2.2" and registry.RECORD_API == "1.12"  # the classes' contract, the records'
 
 
 def test_a_plugins_parts_are_released_with_it():
@@ -363,21 +365,21 @@ def test_the_plugins_command_shows_each_plugins_version_and_origin(monkeypatch, 
     # the agencies are Federal's parts; Massive's headlines are in Massive's row; the dataset libraries
     assert list(pubs) == ["federal", "french", "datahub"]
     assert [r["name"] for r in pubs["federal"]["parts"]] == ["fed", "nyfed", "sec", "bls", "fedreg", "cftc"]
-    assert (pubs["federal"]["version"], pubs["federal"]["api"]) == ("0.2.0", "2.0")
+    assert (pubs["federal"]["version"], pubs["federal"]["api"]) == ("0.3.0", "2.2")
     assert pubs["federal"]["parts"][-1]["datasets"] == ["cftc-cot-legacy"] and len(pubs["french"]["datasets"]) == 4
     assert [k["name"] for k in pubs["federal"]["keys"]] == ["GOV_CONTACT"]  # the SEC's, set for the plugin
     massive = next(r for r in out["providers"] if r["name"] == "massive")
-    assert [(r["name"], r["version"], r["account"]) for r in massive["publishers"]] == [("massive-news", "0.2.0", "massive")]
+    assert [(r["name"], r["version"], r["account"]) for r in massive["publishers"]] == [("massive-news", "0.3.0", "massive")]
     assert cli.main(["plugins"]) == 0
     text = capsys.readouterr().out
     assert text.startswith(f"Plugin API {registry.PLUGIN_API}")
-    assert "[0.2.0 for plugin API 2.0, package: plugin-integrator-bitfinex (plugin_integrator_bitfinex:PLUGIN)]" in text
-    assert any(line.startswith("federal") and "[0.2.0 for plugin API 2.0, package: plugin-integrator-federal (plugin_integrator_federal)]" in line
+    assert "[0.3.0 for plugin API 2.2, package: plugin-integrator-bitfinex (plugin_integrator_bitfinex:PLUGIN)]" in text
+    assert any(line.startswith("federal") and "[0.3.0 for plugin API 2.2, package: plugin-integrator-federal (plugin_integrator_federal)]" in line
                and "you set: GOV_CONTACT" in line
                for line in text.splitlines())
     assert any(line.strip().startswith("and Federal Reserve (fed):") for line in text.splitlines())
-    assert "[0.2.0 for plugin API 2.0, package: plugin-integrator-alpaca (plugin_integrator_alpaca)]" in text
-    assert "[0.2.0 for plugin API 2.0, package: plugin-integrator-bitstamp (plugin_integrator_bitstamp:PLUGIN)]" in text
+    assert "[0.3.0 for plugin API 2.2, package: plugin-integrator-alpaca (plugin_integrator_alpaca)]" in text
+    assert "[0.3.0 for plugin API 2.2, package: plugin-integrator-bitstamp (plugin_integrator_bitstamp:PLUGIN)]" in text
     assert any(line.strip().startswith("and Massive headlines (publisher massive-news):") for line in text.splitlines())
     assert not any(line.startswith("massive-news") for line in text.splitlines())
 
@@ -391,7 +393,7 @@ def test_the_plugins_view_shows_each_plugins_version_and_origin(tmp_path):
     assert out["api"] == registry.PLUGIN_API
     assert {(p["version"], p["api"], p["origin"]) for p in out["plugins"] if not p.get("ai")} == {  # the feeds (the AI assistants aside)
         *((v, a, f"package: plugin-integrator-{registry.plugin_of(n)} ({e})") for n, (v, a, e) in PACKAGED.items())}
-    assert {(p["version"], p["api"]) for p in out["publishers"]} == {("0.2.0", "2.0")}
+    assert {(p["version"], p["api"]) for p in out["publishers"]} == {("0.3.0", "2.2")}
 
 
 def test_unknown_providers_are_refused_by_name():
@@ -639,4 +641,4 @@ def test_every_plugin_found_conforms_to_the_class_contract():
     found = [*providers().values(), *publishers().values(), *assistants().values()]
     assert len(found) >= 28, [p.name for p in found]
     assert [w for p in found for w in problems(p)] == []
-    assert all(p.api == "2.0" and not p.is_record for p in found if p.origin != "built in")  # the packages: classes, 2.0
+    assert all(p.api == "2.2" and not p.is_record for p in found if p.origin != "built in")  # the packages: classes, 2.2

@@ -607,13 +607,26 @@ A plugin that fails to load is left out and reported (`plugins`), never fatal.
     MassiveStockData}`, saying `api = "2.1"`) and takes the asset class's otherwise (`data_for(asset)`);
     a publisher its `data` or its kind's (`document_data()`); the conformance check reads the
     declarations. A 2.0 plugin loads unchanged; the fetching stays in each plugin's `DataSource`.
-  - **What a plugin may rely on (API 1.0; 2.0: the classes; 2.1: the data specs)**, and nothing else of `liminal`:
+  - **2.2** (2026-11-11; the user: "each plugin should reflect the the API its attached to, and present
+    links that provide documentation, the plugin interface should more or less contain what it already
+    has, BUT, it should also expose more of what the API is about"; "ensure this is true") is what a
+    plugin attaches to (`sources/apis.py`, liminal-libs 1.49.0): `apis`, an `Api` for each thing it
+    talks to (its maker, what it is about, its form, where it is reached, its version, how a caller
+    proves who it is, its limits and what costs money, the day its facts were read from the maker's
+    pages), with the maker's pages (`Link`), every part of the API (`Area`, covered by the plugin or not)
+    and its calls (`Call`, made by the plugin or not, each saying whether it changes something or costs
+    money); `api_facts()`, what it learned of them while it ran, asking nothing to answer it. The Plugins
+    view (and the platform's page) draws them with the library's `apis.js` after what a plugin's page
+    already shows, its parts' too. A plugin written for 2.2 declares at least one, each with a
+    documentation link and https addresses only (conformance); a 2.0 or 2.1 plugin loads unchanged.
+  - **What a plugin may rely on (API 1.0; 2.0: the classes; 2.1: the data specs; 2.2: what it attaches to)**, and nothing else of `liminal`:
     `sources.registry`: `PLUGIN_API`, `RECORD_API`, `FeedPlugin`, `Plugin`, `Provider`, `KeyVar`,
     `Scanned`, and `Report`, `Limits`, `Capability` for a `reporter`; the helpers `limiter`,
     `machine_caps`, `public_client`, `minute_window`. `sources.plugin`: the same classes and records.
     `sources.publisher`: `PublisherPlugin`, `Publisher`, `Feed`, `Policy`. `sources.archive` (2.0):
     `PublicFeedPlugin`, `CryptoVenuePlugin`. `sources.data` (2.1): `TimeSeriesData` and its asset classes,
-    `DocumentData` and its kinds, their parts, `Product`. `freshness`: `Delay` (a feed's `delays`). `sources.dataset` (1.4):
+    `DocumentData` and its kinds, their parts, `Product`. `sources.apis` (2.2): `Api`, `Link`, `Area`,
+    `Call`, `problems`, `dead_links`. `freshness`: `Delay` (a feed's `delays`). `sources.dataset` (1.4):
     `Dataset`, `Parsed` and the parsers' helpers (`ms`, `day_of`, `at`, `months_after`, `num`,
     `text`). `sources.stream` (1.5): `Live`, `Reconnect`, `Refused`, `Notice`, `PING`, `trade`, `ns`.
     `sources.base`:

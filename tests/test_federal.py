@@ -29,7 +29,7 @@ def test_the_federal_agencies_are_parts_of_one_plugin():
         assert importlib.util.find_spec(f"plugin_integrator_{gone}") is None, gone  # no package of their own either
     pubs = publishers()
     assert list(pubs)[:7] == ["federal", *AGENCIES]  # the plugin's record first, its agencies after it
-    assert all(pubs[n].part_of == "federal" and (pubs[n].version, pubs[n].api) == ("0.2.0", "2.0") for n in AGENCIES)
+    assert all(pubs[n].part_of == "federal" and (pubs[n].version, pubs[n].api) == ("0.3.0", "2.2") for n in AGENCIES)
     assert pubs["federal"].feeds == () and pubs["federal"].part_of == ""
     assert registry.publisher_parts("federal") == AGENCIES and registry.publisher_of("sec") == "federal"
     assert registry.publisher_of("massive-news") == "massive" and registry.publisher_parts("massive-news") == []

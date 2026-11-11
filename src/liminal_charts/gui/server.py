@@ -828,9 +828,15 @@ class ChartApp:
             held = {d["name"]: d for d in self.datasets()["datasets"]}
             for p in out:
                 p["datasetRows"] = [held[n] for n in p["datasets"] if n in held]
+        from liminal_libs.sources import apis as apis_mod
+        from liminal_libs.sources import publishers as registered
         from liminal_libs.sources.registry import database_row, key_row, plugin_databases, plugin_keys, publisher_of
 
+        objects = registered()
         for p in out:  # what you set for it (its parts' too, for a plugin of several): set or not, never a value
+            obj = objects.get(p["name"])  # what it attaches to (plugin API 2.2), each part its own
+            p["apis"] = apis_mod.as_dicts(getattr(obj, "apis", ()) or ()) if obj is not None else []
+            p["apiFacts"] = apis_mod.facts_of(obj) if obj is not None and p["apis"] else {}
             p["keys"] = [key_row(k, self.settings) for k in plugin_keys(p["name"])]
             # where a plugin's data is, its parts' too (a part's are in its plugin's page)
             p["databases"] = ([database_row(d, self.store.path) for d in plugin_databases(p["name"])]

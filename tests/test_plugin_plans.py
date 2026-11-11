@@ -610,6 +610,6 @@ def test_the_page_says_scanning_and_lists_a_plugins_feeds():
     js = (static / "plugins.js").read_text(encoding="utf-8")
     assert "scanning: 'scanning…'" in js and "' · scanning…'" not in js  # the chip says it, not the plan line
     assert "function feedsHtml(p)" in js and "<th>Feed</th>" in js and 'class="pl-feedrow"' in js
-    assert "${feedsHtml(p)}${planHtml(p)}" in js and ": ''}${publishersHtml(p)}${databasesHtml(p)}`;" in js  # its headlines, then where its data is
+    assert "${feedsHtml(p)}${planHtml(p)}" in js and ": ''}${publishersHtml(p)}${databasesHtml(p)}${apisHtml(p, pubPartsOf(p))}`;" in js  # its headlines, where its data is, its API
     css = (static / "style.css").read_text(encoding="utf-8")
     assert ".ex-state.pl-scanning { color: var(--accent);" in css
