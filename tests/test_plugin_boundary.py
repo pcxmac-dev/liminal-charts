@@ -19,6 +19,7 @@ FOR_PEOPLE = {
     ("gov.py", "www.bls.gov"), ("gov.py", "www.ecfr.gov"),
     ("gui/server.py", "127.0.0.1"), ("gui/front.py", "127.0.0.1"),  # this app's own addresses
     ("apps/app.py", "127.0.0.1"), ("apps/login.py", "127.0.0.1"),  # the apps' frame and the login client (liminal-libs 1.7.0)
+    ("machines/admin.py", "127.0.0.1"),  # a boot service's own page on this machine (liminal-libs 1.47.0)
 }
 
 
