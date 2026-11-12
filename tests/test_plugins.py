@@ -276,7 +276,7 @@ def test_a_plugin_for_another_major_is_left_out_and_reported_and_a_matching_one_
         name, api = "acme-early", "1.12"  # a class claiming the record form's contract
 
     class AcmeLater(AcmeClass):
-        name, api = "acme-later", "2.2"  # a class written for a newer minor than this app's
+        name, api = "acme-later", "2.3"  # a class written for a newer minor than this app's (2.2 since 2026-11-11)
     found = installed(("next", "acme_next:PLUGIN", lambda: acme("acme-next", "2.0")),  # a record claiming the classes'
                       ("old", "acme_old:PLUGIN", lambda: acme("acme-old", "0.9")),
                       ("newer", "acme_newer:PLUGIN", lambda: acme("acme-newer", newer)),
