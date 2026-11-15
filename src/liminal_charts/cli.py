@@ -1521,21 +1521,28 @@ def cmd_deps(args, settings: Settings) -> int:
 
 
 def cmd_gui(args, settings: Settings) -> int:
-    """The chart app: its page here, its data through the integrator's data API (gui/front.py),
-    the integrator started for it when nothing answers at its port. `--alone`: page and data in
-    this one process, no fetcher (nothing collected: a read-only copy, a test)."""
-    if args.alone:
-        from .gui.server import serve
+    """The chart app: its page here, its data through the integrator's data API (gui/front.py), the
+    integrator linked at its port and never started from here (the user, 2026-11-14: "don't start any of
+    the applications in the background"). `--alone`: page and data in this one process, no fetcher
+    (nothing collected: a read-only copy, a test). A port something else holds: said, 1, nothing started."""
+    from liminal_libs.apps import PortTaken
 
-        serve(settings.db_path, port=args.port, open_browser=not args.no_browser,
-              priority=list(settings.source_priority), settings=settings, reload_settings=load_settings,
-              rescan=not args.no_rescan)
-        return 0
-    from .gui.front import serve_front
+    try:
+        if args.alone:
+            from .gui.server import serve
 
-    if args.no_rescan:
-        os.environ["LIMINAL_NO_RESCAN"] = "1"  # the integrator this front starts rescans nothing at its start
-    serve_front(settings.db_path, port=args.port, open_browser=not args.no_browser)
+            serve(settings.db_path, port=args.port, open_browser=not args.no_browser,
+                  priority=list(settings.source_priority), settings=settings, reload_settings=load_settings,
+                  rescan=not args.no_rescan)
+            return 0
+        from .gui.front import serve_front
+
+        if args.no_rescan:
+            os.environ["LIMINAL_NO_RESCAN"] = "1"  # kept for what this process runs (the integrator is the user's to start)
+        serve_front(settings.db_path, port=args.port, open_browser=not args.no_browser)
+    except PortTaken as e:
+        print(e, file=sys.stderr, flush=True)
+        return 1
     return 0
 
 

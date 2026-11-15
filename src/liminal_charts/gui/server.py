@@ -2473,17 +2473,19 @@ def _prepare(app: ChartApp, rescan: bool) -> None:
 
 
 def make_server(app: ChartApp, port: int) -> ThreadingHTTPServer:
-    """The HTTP server of `app` on 127.0.0.1:`port`, or a free one when something answers there
-    already (web.listening: a bind alone cannot tell on Windows, where the fetcher's page took the
-    integrator's front's port, 8785, and the front proxied to itself)."""
+    """The HTTP server of `app` on 127.0.0.1:`port` (0, any free one, is a test's). A port something already
+    answers on (web.listening: a bind alone cannot tell on Windows) is refused, never traded for another
+    (liminal-libs 1.52.0 PortTaken; the user, 2026-11-14: "i only want ports for liminal-login ;
+    liminal-platform ; liminal-charts ; liminal-integrator"; "never provide ports for anything else")."""
+    from liminal_libs.apps import PortTaken
+
     port_ref = [port]
     if port and web.listening(port):
-        port = 0
+        raise PortTaken(app.frame, port)
     try:
-        httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app, port_ref))
-    except OSError:
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app, port_ref))  # port taken: pick a free one
-    return httpd
+        return ThreadingHTTPServer(("127.0.0.1", port), make_handler(app, port_ref))
+    except OSError as e:
+        raise PortTaken(app.frame, port, e) from None
 
 
 def serve(db_path: Path, port: int = 8765, open_browser: bool = True, priority: list[str] | None = None,

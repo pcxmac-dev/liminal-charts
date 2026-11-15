@@ -73,7 +73,6 @@ def test_the_front_answers_the_ui_preferences_itself(tmp_path, monkeypatch):
     integrator need run, and written by the chart page's Preferences; the library's theme.js and menu.js served."""
     monkeypatch.setenv("LIMINAL_FETCHER_PORT", "none")
     monkeypatch.setenv("LIMINAL_LOGIN_URL", "none")
-    monkeypatch.setattr(front_mod, "start_integrator", lambda db_path, port, log=print: pytest.fail("nothing to start"))
     srv = _serving(make_front_handler(Front(tmp_path / "liminal.db", log=lambda m: None)))
     port = srv.server_address[1]
     try:

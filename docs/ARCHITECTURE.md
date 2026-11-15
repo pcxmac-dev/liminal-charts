@@ -275,9 +275,16 @@ liminal-integrator"; "all lib calls will point to liminal-libs".
   and its scripts and passes every `/api/` request of its pages to the integrator's data API at its
   port (LIMINAL_FETCHER_PORT, 8785), the profile cookie and the app's own headers with it, where it
   came from checked here and not passed on; an event stream as it comes. No database is opened here
-  and no pipe: when nothing answers at the integrator's port, the front starts the integrator's server
-  for itself (`front.start_integrator`: `liminal-integrator serve --no-browser --until-quiet`, which ends
-  again once no page has been in touch for LIMINAL_QUIET_SECONDS); the integrator holds the fetcher.
+  and no pipe; the integrator holds the fetcher. The integrator is linked: when nothing answers at its
+  port it is not running, the page is told so and nothing starts it from here (2026-11-14, the user:
+  "don't start any of the applications in the background"; until then `front.start_integrator` ran
+  `liminal-integrator serve --no-browser --until-quiet`). The login the charts app inherits is included:
+  an object of the login class the front holds (`Front.charts`, the `ChartsApp` frame with `LOGIN = True`;
+  liminal-libs 1.52.0 `App.login_object`), answered under /login/ at the front's own port, its users the
+  charts app's (the user: "the platform and integrator inherit the login function, they are separate
+  login instances, class vs object"). A port something else answers on is refused, never traded for a
+  free one ("i only want ports for liminal-login ; liminal-platform ; liminal-charts ;
+  liminal-integrator").
   (Until 2026-11-03 the front attached to the fetcher host itself and proxied to the page that host
   served on a port of its own: three listeners. The user: "for the webserver / ports, i just
   integrator, and charts".) `gui

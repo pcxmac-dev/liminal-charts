@@ -17,6 +17,12 @@ class ChartsApp(App):
     ICON = "disk"  # the symbol's disk at the top of the rail (icons.js)
     PORT = 8765
     PORT_VAR = "LIMINAL_CHARTS_PORT"
+    # the login the charts app inherits (the user, 2026-11-14: "the platform and integrator inherit the login function,
+    # they are separate login instances, class vs object"): an object of the login class the front holds (gui/front.py),
+    # at the front's port, its users the charts app's; LIMINAL_CHARTS_LOGIN "none" or "off" turns it off, and so does
+    # LIMINAL_LOGIN_URL's, as when the login was an app the front bound at its address
+    LOGIN, LOGIN_VAR = True, "LIMINAL_CHARTS_LOGIN"
+    LOGIN_URL_VAR = "LIMINAL_LOGIN_URL"
 
     def __init__(self, log=print, login: Login | None = None):
         # The user environment variables stand in for a login session until the app holds one of its own
