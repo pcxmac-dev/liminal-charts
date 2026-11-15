@@ -15,7 +15,9 @@ integrator inherit the login function, they are separate login instances, class 
 is for an app like charts to be able to 'link' to an app like platform or an app like integrator or
 both"; "linking vs including the objects, is so that parts of the code can be executed remotely, and
 connected through the icon bridge": the integrator is linked, reached at its port and never started
-from here (one that does not answer is not running, and the page is told so); the login is included,
+from here (one that does not answer is not running, and the page is told so); so is the platform, at
+its address on this machine or another (LIMINAL_PLATFORM_URL), its tray on the far right of the rail
+and its pages under /platform/, only its own cookies passed on to it; the login is included,
 an object of the login class held here for the charts app (its superclass, liminal_libs.apps
 App.login_object), answered at this front's own port: no login process, no port of its own.
 
@@ -34,7 +36,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from liminal_libs import config
-from liminal_libs.apps import PAIRS_PATH, PortTaken, forward, pairs_wanted, serve_object
+from liminal_libs.apps import PAIRS_PATH, Binding, PortTaken, forward, pairs_wanted, serve_object
 from liminal_libs.logs import log_to
 from ..frame import ChartsApp
 from . import web
@@ -42,6 +44,14 @@ from .web import WRITE_HEADER
 
 INTEGRATOR_PORT = 8785  # the integrator's page and data API (LIMINAL_FETCHER_PORT; none: no page)
 LOGIN_PREFIX = "/login"  # where the login the charts app inherits answers, at this front's port
+# the platform this front links (the user, 2026-11-14: "the idea is for an app like charts to be able to 'link' to an
+# app like platform or an app like integrator or both"; "connected through the icon bridge (far right side)"): at its
+# address, on this machine or another (LIMINAL_PLATFORM_URL; "none" or "off": no link), its tray at the rail's foot, its
+# pages under /platform/; never started from here
+PLATFORM_URL = "http://127.0.0.1:8775"
+PLATFORM_URL_VAR = "LIMINAL_PLATFORM_URL"
+PLATFORM_PREFIX = "/platform"
+PLATFORM_COOKIES = ("liminal_login_platform",)  # the cookies of the platform's own (its login's): the only ones it gets
 
 
 def integrator_port() -> int | None:
@@ -57,8 +67,21 @@ def integrator_port() -> int | None:
     return port or None
 
 
+def platform_url() -> str | None:
+    """Where the platform this front links is (LIMINAL_PLATFORM_URL, http://127.0.0.1:8775; another machine's
+    address links one there). None: no link (none, off)."""
+    raw = (config.setting(PLATFORM_URL_VAR) or "").strip()
+    if raw.lower() in ("none", "off"):
+        return None
+    return (raw or PLATFORM_URL).rstrip("/")
+
+
 def _is_login(path: str) -> bool:
     return path == LOGIN_PREFIX or path.startswith(LOGIN_PREFIX + "/")
+
+
+def _is_platform(path: str) -> bool:
+    return path == PLATFORM_PREFIX or path.startswith(PLATFORM_PREFIX + "/")
 
 
 class Front:
@@ -71,6 +94,8 @@ class Front:
         self.name = name
         self._port: int | None = None  # the integrator's port answered at last
         self._absent: int | None = None  # the integrator's port found not answering, said once until it answers
+        self._platform: str | None = None  # the platform's address answered at last
+        self._platform_absent: str | None = None  # the platform's address found not answering, said once
         # the charts app as the login it inherits sees it (its superclass, the one thing that login points to): its
         # name and title, where it is served (set once served), the pairs its plugins ask for (read here)
         self.charts = ChartsApp(log=log)
@@ -121,10 +146,35 @@ class Front:
         when there is none: the page then opens as before, on its profile alone."""
         return self.charts.signed_in(handler)
 
+    def platform(self) -> Binding | None:
+        """The platform this front links, when something answers at its address; None: no link (LIMINAL_PLATFORM_URL
+        none), or it is not running (said once; it is the user's to start, never started here)."""
+        url = platform_url()
+        if url is None:
+            return None
+        linked = Binding("platform", url)
+        if linked.reachable():
+            if self._platform != url:
+                self._platform, self._platform_absent = url, None
+                self.log(f"{self.name} links the platform at {url}/")
+            return linked
+        self._platform = None
+        if self._platform_absent != url:
+            self._platform_absent = url
+            self.log(f"the platform is not running (nothing answers at {url}/): its icons are not on {self.name}'s rail "
+                     "until it is started; nothing is started from here")
+        return None
+
     def trays(self) -> list[dict]:
         """The trays drawn at the foot of the rail, after a divider each (the user, 2026-11-04: "Each divider
-        represents a separate tray. From a separate object like the login"): the login held here."""
-        return self.charts.trays()
+        represents a separate tray. From a separate object like the login"; 2026-11-14: "connected through the icon
+        bridge (far right side)"): the platform's when it is linked and answers, then the login held here."""
+        out = []
+        linked = self.platform()
+        tray = linked.tray() if linked is not None else None
+        if tray:
+            out.append(tray)
+        return out + self.charts.trays()
 
     def close(self) -> None:
         """The login held here closed (its sessions)."""
@@ -178,6 +228,10 @@ def make_front_handler(front: Front):
                 if self._from_this_app():
                     self._login("GET")
                 return
+            if _is_platform(path) and platform_url() is not None:
+                if self._from_this_app():
+                    self._linked("GET")
+                return
             self._static(path)
 
         def _write(self, method: str) -> None:
@@ -189,6 +243,8 @@ def make_front_handler(front: Front):
                 return self._ui(method)
             if _is_login(urlsplit(self.path).path):
                 return self._login(method)
+            if _is_platform(urlsplit(self.path).path) and platform_url() is not None:
+                return self._linked(method)
             self._proxy(method)
 
         def do_POST(self) -> None:
@@ -252,6 +308,19 @@ def make_front_handler(front: Front):
             if not path or path.startswith("?"):
                 path = "/" + path
             serve_object(self, login, method, path)
+
+        def _linked(self, method: str) -> None:
+            """The request passed on to the platform this front links, as /<the rest> (liminal_libs.apps.forward): its
+            answer and its cookies back, their path narrowed to /platform; of the browser's cookies only the platform's
+            own travel (it may be on another machine). Not running: the page is told; nothing is started from here.
+            Passed on at once, no answer asked of it first (one reach of another machine per request, not two)."""
+            path = self.path[len(PLATFORM_PREFIX):]
+            if not path or path.startswith("?"):
+                path = "/" + path
+            forward(self, method, platform_url() or PLATFORM_URL, path, cookie_path=PLATFORM_PREFIX,
+                    keep_cookies=PLATFORM_COOKIES,
+                    unavailable="the platform is not running (nothing answers at its address): its pages show here once "
+                                "it is started; nothing is started from here")
 
         def _static(self, path: str) -> None:
             rel = "index.html" if path in ("", "/") else path.lstrip("/")

@@ -54,7 +54,8 @@ _FETCHER_PAGE: list[bytes] = []
 def fetcher_page() -> bytes:
     """The fetcher's own page: the chart page without the chart, the tools and what is the user's
     (style.css and the scripts read the body's mode): the data and monitoring views, the icons.
-    Nobody's: no profile, no login."""
+    No profile; the integrator's own login stands before it (its sign-in until signed in there, the
+    login an object its frame holds: liminal-integrator 1.9.0)."""
     if not _FETCHER_PAGE:
         html = (STATIC / "index.html").read_text(encoding="utf-8")
         html = html.replace("<body>", '<body data-mode="fetcher">', 1).replace("<title>Liminal Charts</title>",

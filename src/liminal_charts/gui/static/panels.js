@@ -377,15 +377,25 @@
     window.LiminalMenu.open({ x: keyboard ? r.left - 170 : e.clientX, y: keyboard ? r.top : e.clientY, title: view[1],
       items: [{ label: 'Disable', run: () => setViewOn(view[0], false) }], from: b });
   });
-  // The apps bound to this front (the login app), each its own tray at the foot of the rail after a
-  // divider (the user, 2026-11-04: "Each divider represents a separate tray. From a separate object
-  // like the login"); an icon opens the app's page, whole, in the bound view (?embedded=1 hides its
-  // own rail). The front answers /api/trays itself; the integrator's own page has no bound apps.
+  // The trays at the foot of the rail, each after a divider (the user, 2026-11-04: "Each divider
+  // represents a separate tray. From a separate object like the login"; 2026-11-14: "linking vs including
+  // the objects, is so that parts of the code can be executed remotely, and connected through the icon
+  // bridge (far right side)"): the apps this front links (the platform) and the login it holds; on the
+  // integrator's own page its login's. An icon opens the app's page, whole, in the bound view (?embedded=1
+  // hides its own rail); a linked app's plugin icon opens it at that plugin (#name, the platform's way).
+  // The front answers /api/trays itself, so does the integrator's page.
   const BOUND = new Set();
+  const BOUND_ITEM = {};  // the icon last chosen in each app's tray: '' for its master icon
   function showBound(app) {
     const f = document.getElementById('boundFrame');
+    const item = BOUND_ITEM[app] || '';
+    const hash = item ? `#${encodeURIComponent(item)}` : '';
     // in this page's theme (the UI's: theme.js; the bound app's page honours a `theme` in its address)
-    if (f.dataset.app !== app) { f.src = `/${encodeURIComponent(app)}/?embedded=1&theme=${encodeURIComponent(state.theme)}`; f.dataset.app = app; }
+    const src = `/${encodeURIComponent(app)}/?embedded=1&theme=${encodeURIComponent(state.theme)}${hash}`;
+    if (f.dataset.app !== app) { f.src = src; f.dataset.app = app; f.dataset.item = item; return; }
+    if ((f.dataset.item || '') === item) return;
+    f.dataset.item = item;
+    try { f.contentWindow.location.hash = hash || '#'; } catch (e) { f.src = src; }  // the same page at another plugin
   }
   window.addEventListener('liminal:theme', () => {  // the bound page shown since: painted again in place (same origin)
     try { document.getElementById('boundFrame').contentWindow?.LiminalTheme?.apply(state.theme); } catch (e) { /* not loaded */ }
@@ -406,6 +416,8 @@
         if (item.kind === 'app') b.classList.add('master');
         b.title = item.title || t.title || t.app;
         b.innerHTML = icon(item.icon, RAIL_ICON);
+        // before the rail's own click (showPane): which of the app's icons it was
+        b.addEventListener('click', () => { BOUND_ITEM[t.app] = item.kind === 'app' ? '' : String(item.id || ''); });
         rail.appendChild(b);
       }
       if (t.app === 'login') watchLogin();
@@ -424,7 +436,7 @@
     refresh();
     setInterval(refresh, 60000);
   }
-  if (!window.FETCHER_MODE) drawBoundTrays();
+  drawBoundTrays();  // the chart page: the apps linked and its login; the integrator's page: its login
   // The rail's foot: the signed-in profile (its initial); a click signs out to the login page, where
   // another is picked or made. A finger's tap asks first (the user, 2026-11-10: on touch screens a tap on the profile
   // initial asks before signing out): a finger brushing the rail's foot while scrolling it signed out at once. A

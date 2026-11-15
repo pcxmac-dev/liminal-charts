@@ -351,3 +351,85 @@ def test_the_front_tells_the_login_it_inherits_the_pairs_its_plugins_ask_for(tmp
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+class PlatformStandIn(BaseHTTPRequestHandler):
+    """The platform as far as the front's link needs it: its tray, its page and API echoing what they got, its login's
+    cookie set on a write."""
+
+    def log_message(self, *a):
+        pass
+
+    def _json(self, status, data, cookie=None):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/api/tray":
+            return self._json(200, {"app": "platform", "icon": "chip", "title": "Liminal Platform", "items": [
+                {"id": "platform", "icon": "chip", "title": "Liminal Platform", "kind": "app", "app": "platform"},
+                {"id": "hw-stats", "icon": "gauge", "title": "Hardware stats", "kind": "plugin", "app": "platform"}]})
+        self._json(200, {"path": self.path, "cookie": self.headers.get("Cookie"), "origin": self.headers.get("Origin")})
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        self._json(200, {"got": json.loads(self.rfile.read(n) or b"{}"), "write": self.headers.get("X-Liminal-Charts")},
+                   cookie="liminal_login_platform=p; Path=/; HttpOnly")
+
+
+def test_the_front_links_the_platform_through_the_icon_bridge(tmp_path, monkeypatch):
+    """The platform linked (the user, 2026-11-14: "the idea is for an app like charts to be able to 'link' to an app like
+    platform or an app like integrator or both"; "linking vs including the objects, is so that parts of the code can be
+    executed remotely, and connected through the icon bridge (far right side)"): at its address (LIMINAL_PLATFORM_URL),
+    its tray at the rail's foot, its pages under /platform/ with only its own cookies passed on and its cookies' path
+    narrowed there; not running, the page is told and nothing is started."""
+    up = ThreadingHTTPServer(("127.0.0.1", 0), PlatformStandIn)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    monkeypatch.setenv("LIMINAL_PLATFORM_URL", f"http://127.0.0.1:{up.server_address[1]}")
+    monkeypatch.setenv("LIMINAL_FETCHER_PORT", "none")
+    lines: list[str] = []
+    front = Front(tmp_path / "liminal.db", log=lines.append)
+    srv, port = _serve(front)
+    try:
+        try:
+            trays = json.loads(_get(port, "/api/trays")[1])["trays"]
+            assert [t["app"] for t in trays] == ["platform"] and [i["id"] for i in trays[0]["items"]] == ["platform", "hw-stats"]
+            assert any("links the platform" in m for m in lines)
+            j = json.loads(_get(port, "/platform/api/echo?x=1", {"Cookie": "liminal_login_charts=c; mc_profile=3; "
+                                                                           "liminal_login=own; liminal_login_platform=p"})[1])
+            assert j == {"path": "/api/echo?x=1", "cookie": "liminal_login_platform=p", "origin": None}  # its own alone
+            assert json.loads(_get(port, "/platform/")[1])["path"] == "/"
+            assert json.loads(_get(port, "/platform?embedded=1")[1])["path"] == "/?embedded=1"
+            assert _get(port, "/platform/api/echo", {"Origin": "http://evil.example"})[0] == 403
+            conn = HTTPConnection("127.0.0.1", port)
+            conn.request("POST", "/platform/api/x", body=json.dumps({"a": 1}), headers={"Content-Type": "application/json"})
+            assert conn.getresponse().status == 403  # a write needs the app's own header
+            conn.request("POST", "/platform/api/x", body=json.dumps({"a": 1}),
+                         headers={"Content-Type": "application/json", "X-Liminal-Charts": "1"})
+            r = conn.getresponse()
+            assert r.status == 200 and json.loads(r.read()) == {"got": {"a": 1}, "write": "1"}
+            assert r.getheader("Set-Cookie") == "liminal_login_platform=p; Path=/platform; HttpOnly"  # narrowed to its prefix
+            panels = (front_mod.web.STATIC / "panels.js").read_text(encoding="utf-8")
+            assert "BOUND_ITEM[t.app] = item.kind === 'app' ? '' : String(item.id || '');" in panels  # a plugin's icon: its view
+            assert "f.contentWindow.location.hash = hash || '#';" in panels and "drawBoundTrays();  // the chart page" in panels
+        finally:
+            up.shutdown()
+            up.server_close()
+        # not running: no tray, the page told once in the log, nothing started
+        status, body, _ = _get(port, "/platform/api/echo")
+        assert status == 503 and b"the platform is not running" in body and b"nothing is started from here" in body
+        assert json.loads(_get(port, "/api/trays")[1]) == {"trays": []}
+        assert sum("the platform is not running" in m for m in lines) == 1
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    monkeypatch.setenv("LIMINAL_PLATFORM_URL", "none")  # no link
+    assert front_mod.platform_url() is None and Front(tmp_path / "liminal.db", log=lambda m: None).platform() is None
+    monkeypatch.delenv("LIMINAL_PLATFORM_URL")
+    assert front_mod.platform_url() == "http://127.0.0.1:8775"

@@ -284,7 +284,15 @@ liminal-integrator"; "all lib calls will point to liminal-libs".
   charts app's (the user: "the platform and integrator inherit the login function, they are separate
   login instances, class vs object"). A port something else answers on is refused, never traded for a
   free one ("i only want ports for liminal-login ; liminal-platform ; liminal-charts ;
-  liminal-integrator").
+  liminal-integrator"). The platform is linked too ("the idea is for an app like charts to be able to 'link'
+  to an app like platform or an app like integrator or both"; "linking vs including the objects, is so
+  that parts of the code can be executed remotely, and connected through the icon bridge (far right
+  side)"): at LIMINAL_PLATFORM_URL (http://127.0.0.1:8775, or another machine's address), its tray at the
+  rail's foot before the login's, its page under /platform/ (?embedded=1; a plugin's icon opens it at
+  #<plugin>), only its own cookies passed on (liminal_login_platform), its cookies' path narrowed to
+  /platform; one not running leaves its icons off and the page told, nothing started. The integrator's
+  own page holds the integrator's login (liminal-integrator 1.9.0): its sign-in until signed in there,
+  answered under /login/ at 8785 before the app wakes; the data API is not behind it (this front reads it).
   (Until 2026-11-03 the front attached to the fetcher host itself and proxied to the page that host
   served on a port of its own: three listeners. The user: "for the webserver / ports, i just
   integrator, and charts".) `gui

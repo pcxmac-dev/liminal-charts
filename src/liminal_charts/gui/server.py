@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 import pandas as pd
 
 from liminal_libs import config, freshness, live, mongo, sourcing
-from liminal_libs.apps import Refused
+from liminal_libs.apps import Refused, serve_object
 from liminal_libs.config import Settings
 from liminal_libs.storage import LayoutLimit, Store
 from liminal_libs.storage.markets import mic_names
@@ -2060,8 +2060,38 @@ def _adjust(value: str | None) -> str:
 
 
 def make_handler(app: ChartApp, port_ref: list[int]):
+    def integrator_login() -> bool:
+        """Whether this server's page holds the integrator's login: its own page (fetcher mode) with the integrator's
+        frame, which inherits the login (liminal-integrator 1.9.0; the user, 2026-11-14: "the platform and integrator
+        inherit the login function, they are separate login instances, class vs object"). The chart app's pages hold
+        none here (its front holds the charts' login)."""
+        return app.mode == "fetcher" and getattr(app.frame, "NAME", "") == "integrator" and app.frame.inherits_login()
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "massive-chart"
+
+        def _login_route(self, method: str) -> bool:
+            """A request of the login the integrator's page holds (an object of the login class, the integrator its
+            superclass), answered here under /login/ (liminal_libs.apps.serve_object), before the app wakes: True when
+            it was one (answered, or refused here)."""
+            path = urlparse(self.path).path
+            if not (path == "/login" or path.startswith("/login/")) or not integrator_login():
+                return False
+            if not self._local() or not self._from_this_app():
+                return True
+            login = app.frame.login_object()
+            if login is None:
+                raw = self.headers.get("Content-Length") or "0"
+                if raw.isdecimal() and 0 < int(raw) <= MAX_BODY:
+                    self.rfile.read(int(raw))
+                self._json({"error": "the integrator inherits the login, but it could not be made here (see its log)"},
+                           HTTPStatus.SERVICE_UNAVAILABLE)
+                return True
+            rest = self.path[len("/login"):]
+            if not rest or rest.startswith("?"):
+                rest = "/" + rest
+            serve_object(self, login, method, rest)
+            return True
 
         def log_message(self, fmt, *args):  # keep the console quiet
             pass
@@ -2284,18 +2314,26 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                 return self._failed(e)
 
         def do_POST(self) -> None:
+            if self._login_route("POST"):
+                return
             with app.using():
                 self._write("POST")
 
         def do_PUT(self) -> None:
+            if self._login_route("PUT"):
+                return
             with app.using():
                 self._write("PUT")
 
         def do_DELETE(self) -> None:
+            if self._login_route("DELETE"):
+                return
             with app.using():
                 self._write("DELETE")
 
         def do_GET(self) -> None:
+            if self._login_route("GET"):  # the integrator's login: answered without waking the app
+                return
             with app.using():  # the app awake (its stores open) for this request, and not released during it
                 self._get()
 
@@ -2309,6 +2347,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
             try:
                 if url.path == web.UI_PATH:  # the UI's preferences: the page painted in the theme (alone, the integrator's own page)
                     return self._json(web.ui_preferences())
+                if url.path == "/api/trays":  # the trays at the rail's foot: on the integrator's page, its login's
+                    return self._json({"trays": app.frame.trays() if integrator_login() else []})
                 signed = self._profile()
                 me = signed or FIRST_PROFILE  # without a cookie (the command line, tests): the first
                 if url.path == "/api/profiles":
@@ -2436,7 +2476,11 @@ def make_handler(app: ChartApp, port_ref: list[int]):
 
         def _static(self, path: str) -> None:
             rel = "index.html" if path in ("", "/") else path.lstrip("/")
-            if rel == "index.html" and app.mode == "fetcher":  # the fetcher's own page: nobody's, no profile
+            if app.mode == "fetcher" and rel in ("index.html", "signin.html"):  # the integrator's own page: no profile
+                # its sign-in (the library's signin.html, its login's page held in it) until the browser is signed in
+                # to the login it holds; without one, the page as before
+                if integrator_login() and app.frame.signed_in(self) is False:
+                    return web.static_file(self, "signin.html")
                 return self._send(HTTPStatus.OK, fetcher_page(), "text/html; charset=utf-8")
             if rel == "index.html" and self._profile() is None:
                 rel = "login.html"  # no profile chosen in this browser: pick or make one first
@@ -2536,6 +2580,7 @@ def serve_integrator(settings: Settings, port: int, *, link, open_browser: bool 
     _prepare(app, rescan)
     httpd = make_server(app, port)
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    app.frame.served = url  # where the login its frame holds says it is (under /login/)
     log(f"integrator: its page and the data API at {url}; the fetcher runs while a page is in touch")
     print(f"the integrator's page at {url}; the fetcher runs while a page is in touch  (Ctrl+C to stop)", flush=True)
     if open_browser:
@@ -2556,5 +2601,6 @@ def serve_integrator(settings: Settings, port: int, *, link, open_browser: bool 
         stop.set()
         httpd.server_close()
         app.close()
+        app.frame.stop()  # the login it held closed (its sessions)
         link.let_go()
     return url

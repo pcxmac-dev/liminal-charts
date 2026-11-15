@@ -290,3 +290,15 @@ def store():
     s = Store(":memory:")
     yield s
     s.close()
+
+
+@pytest.fixture(autouse=True)
+def logins_apart(monkeypatch, tmp_path):
+    """Tests never open the machine's real logins nor reach its real apps: the logins the apps include (the charts',
+    the integrator's) are off unless a test turns one on with a stand-in class, a login a test makes keeps its users in
+    the test's own folder, and the platform the front links is none unless a test gives a stand-in's address (the
+    user's own platform may answer at 8775)."""
+    monkeypatch.setenv("LIMINAL_CHARTS_LOGIN", "none")
+    monkeypatch.setenv("LIMINAL_INTEGRATOR_LOGIN", "none")
+    monkeypatch.setenv("LIMINAL_LOGIN_DIR", str(tmp_path / "login"))
+    monkeypatch.setenv("LIMINAL_PLATFORM_URL", "none")
