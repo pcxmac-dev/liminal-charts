@@ -15,6 +15,7 @@ from typing import Iterator
 from liminal_libs import analysis, charts, collector, config
 from liminal_libs.config import ConfigError, Settings, load_settings
 from liminal_libs.storage.common import Behind
+from liminal_libs.storage.link import LinkError
 from liminal_libs.storage.feeds import TicksBlocked
 from liminal_libs.errors import NotEntitled, RateLimited, SourceError, Unauthorized
 from liminal_libs.sessions import ET
@@ -2154,6 +2155,6 @@ def main(argv: list[str] | None = None) -> int:
     except TicksBlocked as e:
         print(str(e), file=sys.stderr)
         return 2
-    except Behind as e:  # a database on another system's drive that this software is ahead of: said, not altered
-        print(str(e), file=sys.stderr)
+    except (Behind, LinkError) as e:  # a database on another system's drive that this software is ahead of (said,
+        print(str(e), file=sys.stderr)  # not altered), or one whose own system cannot be reached to open it
         return 2

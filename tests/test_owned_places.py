@@ -144,3 +144,18 @@ def test_a_database_that_is_behind_is_said_at_the_command_line_and_left_as_it_is
         held.close()
     link._links.clear()
     assert db.read_bytes() == before
+
+
+def test_a_helper_that_cannot_be_reached_is_said_at_the_command_line(db, monkeypatch, capsys):
+    """The suite inside WSL before Windows has the library's link: its helper has no such module."""
+    from liminal_libs.storage import link
+
+    def unreachable(path):
+        raise link.LinkError("the helper on Windows did not answer (pythonw.exe -m liminal_libs.storage.link): "
+                             "No module named liminal_libs.storage.link")
+
+    monkeypatch.setenv("LIMINAL_DB", str(db))
+    monkeypatch.setattr(link, "link_for", unreachable)
+    assert cli.main(["status"]) == 2
+    said = capsys.readouterr().err
+    assert "the helper on Windows did not answer" in said and "Traceback" not in said
