@@ -634,14 +634,34 @@ A plugin that fails to load is left out and reported (`plugins`), never fatal.
     view (and the platform's page) draws them with the library's `apis.js` after what a plugin's page
     already shows, its parts' too. A plugin written for 2.2 declares at least one, each with a
     documentation link and https addresses only (conformance); a 2.0 or 2.1 plugin loads unchanged.
-  - **What a plugin may rely on (API 1.0; 2.0: the classes; 2.1: the data specs; 2.2: what it attaches to)**, and nothing else of `liminal`:
+  - **2.3** (2026-11-16; the user: "for the integrator i need plugins for each type of database and in
+    each plugin can setup either new databases or connections to existing databases using many different
+    types of IP or IPC methods. each instance in the plugin has it's own configuration how it's shared,
+    ports, permissions etc") is the database plugins (`storage/databases.py`, liminal-libs 1.61.0): a
+    `DatabasePlugin` for each engine (`DATABASE` in its module; `registry.databases()`), the
+    integrator's own (plugin-integrator-sqlite, -duckdb, -mongodb; then -postgres, -mariadb). It holds
+    instances (`Instance`): its own, which are today's databases opened as today, and the ones the user
+    adds, each with what it holds, where it is, the method it is reached by (`file`, `helper`, `socket`,
+    `tcp`), its port, who else may attach and how far (`Share`), and on a server the role used there.
+    What the user adds is kept through the plugin's login (one value under `<ENGINE>_INSTANCES`, a
+    sign-in as two more pairs), never in a file. It answers `builtin`, `open`, `probe`, `make` and
+    `own_port`; what an app asks of it is the same for every engine (`instances`, `state`, `test`,
+    `new_database`, `connect_to`, `share`, `set_port`, `forget`, `set_credentials`, `status`). They are
+    no feeds and no publishers: the Plugins view does not list them; their page is the Databases view
+    (`databases.js`: the Engines at the top of its list, each with its instances, its forms and its API
+    card), answered by the integrator (`GET /api/databases/plugins`, `POST /api/databases/instances`:
+    liminal-integrator 1.12.0), which this app's data API leaves to its frame (`_frame_write`). A
+    plugin written for 2.0 to 2.2 loads unchanged.
+  - **What a plugin may rely on (API 1.0; 2.0: the classes; 2.1: the data specs; 2.2: what it attaches to; 2.3: the database plugins)**, and nothing else of `liminal`:
     `sources.registry`: `PLUGIN_API`, `RECORD_API`, `FeedPlugin`, `Plugin`, `Provider`, `KeyVar`,
     `Scanned`, and `Report`, `Limits`, `Capability` for a `reporter`; the helpers `limiter`,
     `machine_caps`, `public_client`, `minute_window`. `sources.plugin`: the same classes and records.
     `sources.publisher`: `PublisherPlugin`, `Publisher`, `Feed`, `Policy`. `sources.archive` (2.0):
     `PublicFeedPlugin`, `CryptoVenuePlugin`. `sources.data` (2.1): `TimeSeriesData` and its asset classes,
     `DocumentData` and its kinds, their parts, `Product`. `sources.apis` (2.2): `Api`, `Link`, `Area`,
-    `Call`, `problems`, `dead_links`. `freshness`: `Delay` (a feed's `delays`). `sources.dataset` (1.4):
+    `Call`, `problems`, `dead_links`. `storage.databases` (2.3): `DatabasePlugin`, `Instance`, `Share`,
+    `Made`, `Refusal`, `variable_of`, `now_iso`, `new_password`, `SUFFIXES`, `DATA`, `listening`,
+    `is_local`. `freshness`: `Delay` (a feed's `delays`). `sources.dataset` (1.4):
     `Dataset`, `Parsed` and the parsers' helpers (`ms`, `day_of`, `at`, `months_after`, `num`,
     `text`). `sources.stream` (1.5): `Live`, `Reconnect`, `Refused`, `Notice`, `PING`, `trade`, `ns`.
     `sources.base`:

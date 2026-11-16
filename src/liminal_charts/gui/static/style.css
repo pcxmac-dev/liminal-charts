@@ -1102,6 +1102,35 @@ main > .view.ex-view:not([hidden]) { display: grid; }
 .db-note { margin: 10px 0; }
 .db-spec th { text-align: left; font-weight: 500; color: var(--muted); white-space: nowrap; vertical-align: top; padding: 4px 8px 4px 0; }
 .db-spec td { overflow-wrap: anywhere; }
+/* the engines' instances and their forms (databases.js: the database plugins, liminal-integrator 1.12.0) */
+.db-instances td { vertical-align: top; }
+.db-acts { text-align: right; }
+.db-acts button, .db-add button, .db-form-acts button:not(.primary), .db-ask button:not(.primary) {
+  font-size: 11px; padding: 2px 8px; margin: 0 0 4px 4px; border-color: var(--border); }
+.db-add { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.db-add:empty, .db-notes:empty, .db-apis:empty { display: none; }
+.db-add button, .db-form-acts button, .db-ask button { margin: 0; }
+.db-form { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 14px; align-items: start; }
+.db-view .db-form h4 { margin: 0; }
+.db-form h4, .db-form > .p-muted, .db-form fieldset, .db-form-acts { grid-column: 1 / -1; }
+.db-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; min-width: 0; border: 0; padding: 0; margin: 0; }
+.db-field > span, .db-field legend { color: var(--muted); font-size: 11px; padding: 0; }
+.db-field input:not([type="checkbox"]), .db-field select { border-color: var(--border); background: var(--panel); min-width: 0; cursor: text; }
+.db-field select { cursor: pointer; }
+fieldset.db-field { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.db-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.db-check input { padding: 0; }
+.db-form-acts { display: flex; gap: 8px; align-items: center; }
+.db-form-acts button.primary, .db-ask button.primary { padding: 3px 12px; }
+.db-ask { margin: 10px 0; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 8px; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 8px; }
+.db-ask.second { border-color: var(--warn, #d9a441); }
+.db-ask span { flex: 1 1 260px; overflow-wrap: anywhere; }
+.db-said { margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 6px 6px 0;
+  overflow-wrap: anywhere; }
+.db-said.failed { border-left-color: var(--warn, #d9a441); }
+.db-said ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
 /* Setup: each variable a plugin reads, typed and saved here (never shown back) */
 .pl-setup td { vertical-align: middle; }
 .pl-setup input.pl-key { width: 100%; min-width: 140px; font-size: 12px; padding: 2px 6px; box-sizing: border-box; }

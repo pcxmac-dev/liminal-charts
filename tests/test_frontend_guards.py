@@ -370,6 +370,38 @@ def test_the_databases_view_has_its_rail_button_icon_script_and_three_columns():
     assert ".db-view" in _js("style.css")
 
 
+def test_the_databases_view_lists_the_engines_and_asks_in_the_page_before_any_change():
+    # the user, 2026-11-15: "for the integrator i need plugins for each type of database and in each plugin can setup
+    # either new databases or connections to existing databases ... each instance in the plugin has it's own
+    # configuration how it's shared, ports, permissions etc": the database plugins head the Databases view's list
+    d = _js("databases.js")
+    assert "engines = await api('/api/databases/plugins');" in d and ">Engines</h4>" in d and 'data-db="plugin:${esc(p.name)}"' in d
+    # an integrator from before them answers neither route: the view is then as it was
+    assert "if (/not found/i.test(String(err.message || err))) engines = null;" in d
+    # a change is asked in the page (no native confirm: a touch screen and a test can answer it), sent only on its yes
+    assert "confirm(" not in d and "alert(" not in d
+    assert "fetch('/api/databases/instances', { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify(body) })" in d
+    assert "if (what === 'yes') { if (pending) answer(p, { ...pending.body, confirm: true }); return; }" in d
+    assert d.count("confirm: true") == 1 and "answer(p, { plugin: p.name, action: 'test', name })" in d  # a test alone needs no yes
+    # a refusal that names what accepts it is the page's second question: the same form sent again with that said
+    assert "pending = { plugin: p.name, body: { ...body, [accept]: true }, words: got.body.error" in d and "second: true };" in d
+    assert "/^[a-z_]+$/.test(accept)" in d and "!pending.second" in d  # a name alone, and asked once more only
+    for kind in ("'new'", "'connect'", "'share'", "'port'", "'signin'", "'forget'"):
+        assert kind in d, kind
+    # a password is typed in a password field and goes nowhere but the form sent
+    assert d.count('type="password"') == 1 and "const secret = (name) =>" in d and "typed('password')" in d
+    # what a plugin says is text on the page, never markup
+    assert "${esc(pending.words)}" in d and "${esc(said.said)}" in d and "<li>${esc(l)}</li>" in d
+    # each part keeps a place of its own, so a question appearing or going leaves the form as typed (Views.patch)
+    assert "const slot = (html) => html || '<div class=\"db-slot\" hidden></div>';" in d
+    assert "${slot(formHtml(p))}${slot(askHtml(p))}${slot(saidHtml(p))}" in d
+    # its API card, as every plugin's page shows it (plugin API 2.2), folded
+    assert "window.LiminalApis.html(p.apis || [], p.apiFacts || {}, { owner: p.name, fold: true })" in d
+    css = _js("style.css")
+    for rule in (".db-form {", ".db-ask.second", ".db-said.failed", ".db-acts button"):
+        assert rule in css, rule
+
+
 def test_views_restored_on_opening_the_page_load_their_content():
     # panels.js restores the last view before these scripts listen for its event: each loads itself too
     order = _js("index.html")

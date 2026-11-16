@@ -236,7 +236,7 @@ def test_every_plugin_is_versioned_for_this_apps_contract():
             "french": ("0.3.0", "2.2"), "datahub": ("0.3.0", "2.2")}  # the dataset libraries: packages too
     assert {p.name: (p.version, p.api) for p in plugins_} == want
     assert all(registry.api_refusal(p.api, record=p.is_record) is None for p in plugins_)
-    assert registry.PLUGIN_API == "2.2" and registry.RECORD_API == "1.12"  # the classes' contract, the records'
+    assert registry.PLUGIN_API == "2.3" and registry.RECORD_API == "1.12"  # the classes' contract, the records'
 
 
 def test_a_plugins_parts_are_released_with_it():
@@ -276,7 +276,7 @@ def test_a_plugin_for_another_major_is_left_out_and_reported_and_a_matching_one_
         name, api = "acme-early", "1.12"  # a class claiming the record form's contract
 
     class AcmeLater(AcmeClass):
-        name, api = "acme-later", "2.3"  # a class written for a newer minor than this app's (2.2 since 2026-11-11)
+        name, api = "acme-later", "2.4"  # a class written for a newer minor than this app's (2.3 since 2026-11-16)
     found = installed(("next", "acme_next:PLUGIN", lambda: acme("acme-next", "2.0")),  # a record claiming the classes'
                       ("old", "acme_old:PLUGIN", lambda: acme("acme-old", "0.9")),
                       ("newer", "acme_newer:PLUGIN", lambda: acme("acme-newer", newer)),

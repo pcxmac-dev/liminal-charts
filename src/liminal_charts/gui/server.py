@@ -2291,6 +2291,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                     if method == "POST" and parts[3:] == ["reset"]:
                         return self._json(app.trade_reset(body))
                     return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+                if parts[:3] == ["", "api", "databases"]:  # its frame's own writes (the integrator's: the instances)
+                    return self._frame_write(method, urlparse(self.path).path, body)
                 if parts[:3] != ["", "api", "layouts"]:
                     return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
                 if method == "POST" and len(parts) == 3:
@@ -2472,6 +2474,22 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                 status, data, *_ = app.frame.api(self, "GET", path, q, None)
             except Refused as e:
                 return self._json({"error": e.reason}, e.status)
+            return self._json(data, status)
+
+        def _frame_write(self, method: str, path: str, body: dict) -> None:
+            """A write none of this API's routes answers, asked of its frame (liminal_libs.apps.App.api): on the
+            integrator's page the database plugins' instances (POST /api/databases/instances: liminal-integrator 1.12.0;
+            the user, 2026-11-15: "in each plugin can setup either new databases or connections to existing databases").
+            A refusal is the frame's own, with the argument that accepts it when it names one (its `answer`): the page
+            asks that as its second question. A copy of the app that reads only changes nothing."""
+            if app.settings.read_only:
+                return self._json({"error": "this copy of the app reads only (LIMINAL_READONLY): nothing is changed"},
+                                  HTTPStatus.CONFLICT)
+            try:
+                status, data, *_ = app.frame.api(self, method, path, {}, body)
+            except Refused as e:
+                answer = getattr(e, "answer", None)
+                return self._json(answer() if callable(answer) else {"error": e.reason}, e.status)
             return self._json(data, status)
 
         def _static(self, path: str) -> None:
