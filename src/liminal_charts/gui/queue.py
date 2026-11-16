@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from liminal_libs import collector, killswitch
-from liminal_libs.proc import pid_alive
 from liminal_libs.sources import feed_profiles, providers, publishers
 from liminal_libs.sources.registry import label, plugin_feeds, plugin_of, publisher_of, publisher_parts
 from liminal_libs.symbols import ASSETS, resolve
@@ -39,9 +38,12 @@ def _part_label(plugin: str, part: str) -> str:
     return pub.title if pub else part
 
 
-def _row(r: dict, alive: dict[int, bool]) -> dict:
+def _row(r: dict, gone: set) -> dict:
+    """A queue row for the page; `gone`: the owners (instance, pid) of running rows whose process is no more
+    (store.queue_gone: this installation's looked up, another's judged by its claims, so a job the suite on
+    the other system is fetching is not shown stopped)."""
     out = {**r, "partLabel": _part_label(r["plugin"], r["part"])}
-    if r["state"] == "running" and r["pid"] and not alive.setdefault(r["pid"], pid_alive(r["pid"])):
+    if r["state"] == "running" and r["pid"] and (r.get("instance"), r["pid"]) in gone:
         out["state"], out["detail"] = "stopped", "its process ended before it"
     if r["kind"] == "bars":
         out["ticker"] = r["key"]
@@ -89,8 +91,9 @@ def view(store, plugin: str | None = None, kind: str | None = None, state: str |
     """The Fetcher: the queue's rows (running, waiting, held, failed, the newest done), counted by
     plugin, kind and state, with each plugin's title; with `settings`, each symbol's bars row says
     how much of it its feed has downloaded (progress)."""
-    alive: dict[int, bool] = {}
-    rows = [_row(r, alive) for r in store.queue_rows(plugin, kind, None if state == "stopped" else state, limit)]
+    raw = store.queue_rows(plugin, kind, None if state == "stopped" else state, limit)
+    gone = store.queue_gone(raw)
+    rows = [_row(r, gone) for r in raw]
     if state == "stopped":
         rows = [r for r in rows if r["state"] == "stopped"]
     if settings is not None:
@@ -103,7 +106,7 @@ def view(store, plugin: str | None = None, kind: str | None = None, state: str |
                     r["progress"] = progress(store, r["part"], r["key"], tiers[r["part"]], today, now)
                 except Exception:  # noqa: BLE001 - a row's measure never fails the queue
                     r["progress"] = None
-    counts = _counts(store, alive)
+    counts = _counts(store)
     titles = _plugins()
     totals: dict[str, int] = {}
     for by in counts["plugins"].values():
@@ -114,11 +117,13 @@ def view(store, plugin: str | None = None, kind: str | None = None, state: str |
             "kinds": sorted(counts["kinds"])}
 
 
-def _counts(store, alive: dict[int, bool]) -> dict:
+def _counts(store) -> dict:
     """The queue's counts by plugin and kind, a row running by a process that is gone counted stopped."""
     counts = store.queue_counts()
-    for r in store.queue_rows(state="running", limit=1000):
-        if r["pid"] and not alive.setdefault(r["pid"], pid_alive(r["pid"])):
+    running = store.queue_rows(state="running", limit=1000)
+    gone = store.queue_gone(running)
+    for r in running:
+        if r["pid"] and (r.get("instance"), r["pid"]) in gone:
             for by in (counts["plugins"].setdefault(r["plugin"], {}), counts["kinds"].setdefault(r["kind"], {})):
                 by["running"] = by.get("running", 1) - 1
                 by["stopped"] = by.get("stopped", 0) + 1
@@ -145,9 +150,10 @@ def plugin_status(store, settings, db_path: Path, name: str, now: datetime | Non
         raise LookupError(f"no plugin named {name}")
     now = now or datetime.now(timezone.utc)
     feeds, pubs = _parts(name)
-    alive: dict[int, bool] = {}
-    rows = [_row(r, alive) for r in store.queue_rows(plugin=name, limit=60)]
-    counts = _counts(store, alive)["plugins"].get(name, {})
+    raw = store.queue_rows(plugin=name, limit=60)
+    gone = store.queue_gone(raw)
+    rows = [_row(r, gone) for r in raw]
+    counts = _counts(store)["plugins"].get(name, {})
     held = fetching_feeds(db_path)
     runs_going = sorted(f for f in feeds if f in held) + ([name] if name in held and name not in feeds else [])
     pause = collector.pause_state(store, now)

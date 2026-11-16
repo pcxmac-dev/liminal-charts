@@ -470,7 +470,7 @@ def cmd_history(args, settings: Settings) -> int:
     """Closed history (storage/history.py). `run`: copy the due closed months of the feeds whose
     bars go to DuckDB (stores.py), newest first, within --budget seconds (one run at a time); a halt
     of fetching ends it after the month in hand. `status`: each feed's months in DuckDB."""
-    from liminal_libs import proc, provenance, stores
+    from liminal_libs import provenance, stores
     from liminal_libs.storage import history
 
     if args.action == "status":
@@ -493,8 +493,14 @@ def cmd_history(args, settings: Settings) -> int:
     if not history.available():
         log("history: duckdb is not installed here: every month stays in SQLite alone")
         return 0
-    lock = settings.db_path.with_name(HISTORY_LOCK)
-    if not proc.acquire(lock):
+    from liminal_libs import claims, mounts
+
+    if mounts.foreign(settings.db_path):  # the copy moves months between files: the files' own system's work
+        log("history: the closed months are copied by the system whose drive the data is on; nothing done from here")
+        return 0
+    held = claims.try_hold(settings.db_path, claims.HISTORY, settings.db_path.with_name(HISTORY_LOCK),
+                           what="the closed months' copy")
+    if held is None:
         log("history: another run is copying; left to it")
         return 0
     try:
@@ -516,7 +522,7 @@ def cmd_history(args, settings: Settings) -> int:
         if not done:
             log("history: nothing due (every closed month copied, or written lately)")
     finally:
-        proc.release(lock)
+        claims.let_go(held)
     return 0
 
 
@@ -596,13 +602,15 @@ POST_LOCK = "post.lock"  # beside the database: one pass of composites and deriv
 def after_sync(args, settings: Settings) -> bool:
     """Composite models, exchange quality and the time frames the feeds do not send, built from
     what the feeds hold (no requests), and research datasets that are due. One such pass at a
-    time (POST_LOCK): another going on, this one is left to it. Each series' build is also
-    leased (derive.take_lease), so a run's own per-symbol builds never overlap it."""
-    from liminal_libs import composite, proc
+    time, on whichever system (the claim `post`, liminal-libs claims.py, with POST_LOCK beside it
+    for the processes from before claims): another going on, this one is left to it. Each series'
+    build is also leased (derive.take_lease), so a run's own per-symbol builds never overlap it."""
+    from liminal_libs import claims, composite
 
     logger = Logger(settings.db_path.parent / "logs" / "liminal.log")
-    lock = settings.db_path.with_name(POST_LOCK)
-    if not proc.acquire(lock):
+    held = claims.try_hold(settings.db_path, claims.POST, settings.db_path.with_name(POST_LOCK),
+                           what="composites and derived frames")
+    if held is None:
         logger("derived frames: another process is building them; left to it")
         return False
     tickers = {t.upper() for t in getattr(args, "tickers", None) or []} or None
@@ -615,7 +623,7 @@ def after_sync(args, settings: Settings) -> bool:
 
                 datasets.fetch(store, log=logger, only_started=True)
     finally:
-        proc.release(lock)
+        claims.let_go(held)
     return True
 
 
@@ -1702,6 +1710,12 @@ def cmd_admin(args, settings: Settings) -> int:
                 done = store.vacuum()
             print(f"vacuumed {len(done)} files")
         elif args.action == "backup":
+            from liminal_libs import mounts
+
+            try:  # a backup copies files the other system has open: its own system's to make
+                mounts.owner_only(settings.db_path, "a backup is made by the system that holds the files")
+            except mounts.NotHere as e:
+                raise SystemExit(str(e)) from None
             dest = args.dest or settings.db_path.parent / "backups" / f"massive-{datetime.now():%Y%m%d-%H%M%S}.db"
             print(f"backup written to {store.backup(Path(dest), ticks=args.ticks)}, feeds in {feeds_backup_dir(Path(dest))}"
                   + (" (with ticks)" if args.ticks else " (bars only; add --ticks for the tick files)"))
