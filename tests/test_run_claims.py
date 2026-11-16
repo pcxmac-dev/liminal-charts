@@ -14,6 +14,9 @@ from liminal_charts.gui import activity
 from liminal_libs import claims, mounts, proc
 from liminal_libs.claims import Claims
 
+# The installation that is not the one running these tests (inside WSL this one is linux::Ubuntu itself)
+OTHER = "linux::Ubuntu" if claims.os_name() == "windows" else "windows::NEPTUNE"
+
 
 @pytest.fixture(autouse=True)
 def nothing_left_held():
@@ -27,9 +30,10 @@ def db(tmp_path):
     return tmp_path / "liminal.db"
 
 
-def _linux(path, pid: int = 4321) -> Claims:
-    """The suite inside WSL on the same database (its processes cannot be looked up from here)."""
-    return Claims.open(path, me="linux::Ubuntu", pid=pid, alive=lambda p, s: True)
+def _other(path, pid: int = 4321) -> Claims:
+    """The other installation on the same database: the suite inside WSL seen from Windows, Windows' seen from
+    inside WSL (its processes cannot be looked up from here)."""
+    return Claims.open(path, me=OTHER, pid=pid, alive=lambda p, s: True)
 
 
 def test_a_feeds_run_takes_its_claim_and_its_lock_file(db):
@@ -47,16 +51,16 @@ def test_a_feeds_run_takes_its_claim_and_its_lock_file(db):
 
 
 def test_a_feed_the_other_system_is_fetching_is_busy_here(db):
-    linux = _linux(db)
+    other = _other(db)
     try:
-        linux.take("feed:massive", what="the massive feed's run")  # no lock file: its process id would mean nothing here
+        other.take("feed:massive", what="the massive feed's run")  # no lock file: its process id would mean nothing here
         with pytest.raises(cli.Busy) as e:
             with cli.run_lock(db, "massive"):
                 pytest.fail("the other system holds this feed")
-        assert "another run is in progress (linux::Ubuntu (process 4321): the massive feed's run)" in str(e.value)
+        assert f"another run is in progress ({OTHER} (process 4321): the massive feed's run)" in str(e.value)
         assert not proc.run_lock_path(db, "massive").exists()  # nothing left behind
         running = activity.fetching_feeds(db)
-        assert list(running) == ["massive"] and running["massive"].instance == "linux::Ubuntu" and activity.lock_owner(db)
+        assert list(running) == ["massive"] and running["massive"].instance == OTHER and activity.lock_owner(db)
         with cli.run_lock(db, "alpaca"):  # another feed is free: each side works on its own
             assert sorted(activity.fetching_feeds(db)) == ["alpaca", "massive"]
         # no move of the data while the other system fetches, though no lock file says so
@@ -64,11 +68,11 @@ def test_a_feed_the_other_system_is_fetching_is_busy_here(db):
             with cli.run_lock(db):
                 pytest.fail("a feed is being fetched")
         assert not proc.run_lock_path(db).exists()
-        linux.release("feed:massive")
+        other.release("feed:massive")
         with cli.run_lock(db, "massive"):
-            assert linux.take("feed:massive") is None  # and the other way round
+            assert other.take("feed:massive") is None  # and the other way round
     finally:
-        linux.close()
+        other.close()
 
 
 def test_a_run_from_before_claims_still_keeps_its_feed(db):
