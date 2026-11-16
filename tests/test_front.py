@@ -114,7 +114,8 @@ def _serve(front):
     return srv, srv.server_address[1]
 
 
-def test_the_front_funnels_its_pages_requests_to_the_integrator(tmp_path, monkeypatch, upstream):
+def test_the_front_funnels_its_pages_requests_to_the_integrator(tmp_path, monkeypatch, upstream,
+                                                                answered_after_its_body):
     monkeypatch.setenv("LIMINAL_FETCHER_PORT", str(upstream.server_address[1]))  # the integrator's port: answering
     monkeypatch.setenv("LIMINAL_LOGIN_URL", "none")  # no login on this page
     lines: list[str] = []
@@ -147,6 +148,18 @@ def test_the_front_funnels_its_pages_requests_to_the_integrator(tmp_path, monkey
         assert r.status == 202 and json.loads(r.read()) == {"got": {"symbol": "AAPL"}, "write": "1"}
         conn.request("POST", "/api/requests", body=b"{}", headers={"Content-Type": "application/json"})
         assert conn.getresponse().status == 403
+        # ... and the front reads and drops its body before it refuses it (unread, the connection is reset on Windows
+        # and the refusal never arrives: a ConnectionAbortedError where a 403 was sent). Sent in two parts, it is not
+        # answered before all of it is there (no race in this: it fails every run where the body is left unread) ...
+        assert answered_after_its_body(port, "/api/requests") == (True, 403)
+        # ... and so no answer is lost, however many and however large (left unread, some are: most still arrive)
+        pad = json.dumps({"pad": "x" * 600_000})
+        for _ in range(40):
+            c = HTTPConnection("127.0.0.1", port)
+            c.request("POST", "/api/requests", body=pad, headers={"Content-Type": "application/json"})
+            r = c.getresponse()
+            assert (r.status, r.read()) == (403, b"missing request header")
+            c.close()
         # the event stream comes through as it is sent
         status, body, r = _get(port, "/api/stream?since=1")
         assert status == 200 and body == b"data: 0\n\ndata: 1\n\n" and r.getheader("Content-Type").startswith("text/event-stream")

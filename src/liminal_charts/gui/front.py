@@ -238,6 +238,7 @@ def make_front_handler(front: Front):
             if not self._local() or not self._from_this_app():
                 return
             if self.headers.get(WRITE_HEADER) != "1":
+                self._drain()  # as its other refusals: with the body unread, Windows resets the connection, the 403 lost
                 return self._send(HTTPStatus.FORBIDDEN, b"missing request header", "text/plain")
             if urlsplit(self.path).path == web.UI_PATH:
                 return self._ui(method)

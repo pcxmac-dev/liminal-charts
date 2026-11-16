@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from datetime import date
 from typing import Iterator
 
@@ -290,6 +291,40 @@ def store():
     s = Store(":memory:")
     yield s
     s.close()
+
+
+@pytest.fixture
+def answered_after_its_body():
+    """ask(port, path, headers=None) -> (waited, status): a write sent to a server of a test's in two parts, the second
+    held back a moment: whether nothing at all came back before the whole of it was sent, and the status that came
+    then. A server that refuses a write reads its body first: answered and closed with the body unread, a connection is
+    reset on Windows and the answer lost (liminal-libs 1.61.1). Many large writes sent in the hope that one is lost
+    say so most runs; this says so every run, on every system."""
+    def ask(port: int, path: str, headers: dict | None = None, wait: float = 0.3) -> tuple[bool, int]:
+        body = b'{"pad": "' + b"x" * 4000 + b'"}'
+        lines = {"Host": f"127.0.0.1:{port}", "Content-Type": "application/json", "Content-Length": str(len(body)),
+                 **(headers or {})}
+        head = f"POST {path} HTTP/1.1\r\n" + "".join(f"{name}: {value}\r\n" for name, value in lines.items()) + "\r\n"
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+            s.sendall(head.encode() + body[:100])
+            s.settimeout(wait)
+            try:
+                s.recv(1)
+                return False, 0  # an answer, or its end, with most of the body still to come
+            except TimeoutError:
+                pass  # nothing yet: the server is reading
+            except OSError:
+                return False, 0  # reset: answered and closed with the body unread
+            s.settimeout(5)
+            s.sendall(body[100:])
+            answer = b""
+            while b"\r\n" not in answer:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                answer += chunk
+        return True, int(answer.split()[1]) if answer else 0
+    return ask
 
 
 @pytest.fixture(autouse=True)

@@ -117,7 +117,8 @@ def test_the_data_api_leaves_the_routes_it_does_not_answer_to_its_frame(tmp_path
         store.close()
 
 
-def test_the_data_api_leaves_its_frames_own_writes_to_it_with_the_frames_own_refusals(tmp_path, monkeypatch):
+def test_the_data_api_leaves_its_frames_own_writes_to_it_with_the_frames_own_refusals(tmp_path, monkeypatch,
+                                                                                      answered_after_its_body):
     """The integrator's database plugins' instances (the user, 2026-11-15: "in each plugin can setup either new
     databases or connections to existing databases"): the page's forms are the frame's to answer; a write is still the
     app's own page's alone (its header), and a copy that reads only changes nothing."""
@@ -149,6 +150,14 @@ def test_the_data_api_leaves_its_frames_own_writes_to_it_with_the_frames_own_ref
             assert post({}, path="/api/databases/nothing") == (404, {"error": "not found"})  # the frame's own word for it
             # a write is the app's own page's alone, here as everywhere
             assert post(form, header=False) == (403, "missing request header") and len(frame.forms) == 4
+            # ... and its body is read and dropped before it is refused (liminal-libs 1.61.1 web.drain: unread, the
+            # connection is reset on Windows and the refusal never arrives). Sent in two parts, it is not answered
+            # before all of it is there (no race in this: it fails every run where the body is left unread) ...
+            assert answered_after_its_body(port, "/api/databases/instances") == (True, 403)
+            # ... and so no answer is lost, however many and however large (left unread, some are: most still arrive)
+            for _ in range(40):
+                assert post({"pad": "x" * 600_000}, header=False) == (403, "missing request header")
+            assert len(frame.forms) == 4
             # a copy that reads only changes nothing: the frame is not asked
             monkeypatch.setattr(app, "_settings", replace(app.settings, read_only=True))
             status, said = post(form)

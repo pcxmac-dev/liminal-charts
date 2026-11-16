@@ -2081,9 +2081,7 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                 return True
             login = app.frame.login_object()
             if login is None:
-                raw = self.headers.get("Content-Length") or "0"
-                if raw.isdecimal() and 0 < int(raw) <= MAX_BODY:
-                    self.rfile.read(int(raw))
+                web.drain(self)
                 self._json({"error": "the integrator inherits the login, but it could not be made here (see its log)"},
                            HTTPStatus.SERVICE_UNAVAILABLE)
                 return True
@@ -2159,6 +2157,7 @@ def make_handler(app: ChartApp, port_ref: list[int]):
             if not self._local() or not self._from_this_app():
                 return
             if self.headers.get(WRITE_HEADER) != "1":
+                web.drain(self)  # its body read and dropped first: unread, Windows resets the connection, the 403 lost
                 return self._send(HTTPStatus.FORBIDDEN, b"missing request header", "text/plain")
             raw_length = self.headers.get("Content-Length") or "0"
             length = int(raw_length) if raw_length.isdecimal() else -1  # not a size: refused, never read
