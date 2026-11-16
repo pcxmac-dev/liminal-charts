@@ -7,7 +7,7 @@ import random
 import subprocess
 import sys
 import time
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
@@ -73,28 +73,50 @@ def run_lock(db_path: Path, feed: str | None = None) -> Iterator[None]:
     holds its lock, and a feed's run gives way to it (each checks the other after taking its own,
     so the two never both go on). The locks name their owners by id and start (proc.py): a run
     that crashed, or whose id the system gave to another process since, does not hold one; one
-    that is alive does, however long it has run (a laptop asleep mid-sync wakes holding it)."""
-    from liminal_libs import proc
+    that is alive does, however long it has run (a laptop asleep mid-sync wakes holding it).
+
+    A feed's run is a claim in the database since liminal-libs 1.56.0 (claims.py: `feed:<name>`), held
+    against every process on the database whichever system it runs on: a lock file names a process
+    id, which only its own system can look up, so Windows and a suite inside WSL each took the
+    other's lock for a dead run's. The lock file is still taken beside the claim, for the processes
+    started before claims. The whole database's lock stays a file (the claims live in the database
+    being moved) and is taken only by the system whose drive the data is on: seen through a mount
+    from another, the data is not moved, compacted or vacuumed from there."""
+    from liminal_libs import claims, mounts, proc
 
     lock, whole = proc.run_lock_path(db_path, feed), proc.run_lock_path(db_path)
     if str(lock) in _HELD:  # this process holds it already
         yield
         return
-    if not proc.acquire(lock):
-        raise Busy(f"another run is in progress (lock file {lock}); exiting")
-    _HELD.add(str(lock))
-    try:
-        if feed is not None and str(whole) not in _HELD and proc.holder(whole) is not None:
-            raise Busy(f"the whole database is locked (lock file {whole}): its data is being moved, or a run "
-                       "from before the feeds ran apart is going on; exiting")
-        if feed is None:
-            busy = sorted(f for f, pid in proc.run_holders(db_path).items() if f is not None and pid != os.getpid())
+    if feed is None:
+        if mounts.foreign(db_path):
+            raise Busy(f"{db_path} is on another system's drive: its data is moved, compacted and vacuumed "
+                       "from that system, not from here; exiting")
+        if not proc.acquire(lock):
+            raise Busy(f"another run is in progress (lock file {lock}); exiting")
+        _HELD.add(str(lock))
+        try:
+            busy = sorted(f for f, who in claims.feed_runs(db_path).items() if f is not None and not who.own)
             if busy:
                 raise Busy(f"feeds are fetching ({', '.join(busy)}); exiting")
-        yield
-    finally:
-        _HELD.discard(str(lock))
-        proc.release(lock)
+            yield
+        finally:
+            _HELD.discard(str(lock))
+            proc.release(lock)
+        return
+    with ExitStack() as held:
+        try:
+            held.enter_context(claims.exclusive(db_path, claims.feed_key(feed), lock, what=f"the {feed} feed's run"))
+        except claims.Taken as e:
+            raise Busy(f"another run is in progress ({e.holder}); exiting") from None
+        _HELD.add(str(lock))
+        try:
+            if str(whole) not in _HELD and None in claims.feed_runs(db_path):
+                raise Busy(f"the whole database is locked (lock file {whole}): its data is being moved, or a run "
+                           "from before the feeds ran apart is going on; exiting")
+            yield
+        finally:
+            _HELD.discard(str(lock))
 
 
 def _date(s: str) -> date:

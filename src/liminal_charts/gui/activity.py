@@ -46,17 +46,19 @@ def log_tail(path: Path, lines: int = 200) -> list[str]:
     return out[-lines:]
 
 
-def lock_owner(db_path: Path) -> int | None:
-    """Process id holding a run lock, if any run is in progress (its owner alive, the same process)."""
+def lock_owner(db_path: Path):
+    """Who holds a run, if any is in progress (the first of fetching_feeds'), else None."""
     return next(iter(fetching_feeds(db_path).values()), None)
 
 
-def fetching_feeds(db_path: Path) -> dict[str | None, int]:
-    """The feeds being fetched now: {feed: process id}, None when the whole database is locked
-    (proc.run_holders: the feeds run side by side, one run each)."""
-    from liminal_libs.proc import run_holders
+def fetching_feeds(db_path: Path) -> dict:
+    """The feeds being fetched now: {feed: who}, None when the whole database is locked (the feeds
+    run side by side, one run each). Every system's runs on this database (claims.feed_runs: the
+    claims, and the lock files of processes from before claims), so a feed Linux is fetching is
+    busy here too."""
+    from liminal_libs.claims import feed_runs
 
-    return run_holders(db_path)
+    return feed_runs(db_path)
 
 
 def _iso(v) -> str | None:
