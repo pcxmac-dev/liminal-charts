@@ -98,6 +98,7 @@ def test_the_whole_database_is_locked_only_from_the_system_whose_drive_it_is_on(
             pytest.fail("the data is being moved")
     assert claims.held(db) == [] and not proc.run_lock_path(db, "massive").exists()  # taken, then given back at once
     proc.run_lock_path(db).unlink()
+    monkeypatch.setenv("LIMINAL_LINK", "loopback")  # its databases through a link, as from there
     monkeypatch.setattr(mounts, "foreign", lambda p, mounts=None: True)  # the same database, seen through a mount
     with pytest.raises(cli.Busy, match="another system's drive"):
         with cli.run_lock(db):

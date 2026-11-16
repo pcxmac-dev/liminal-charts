@@ -71,6 +71,7 @@ def test_the_closed_months_copy_is_one_at_a_time_and_the_files_own_systems(db, l
         assert not db.with_name(cli.HISTORY_LOCK).exists()
     finally:
         other.close()
+    monkeypatch.setenv("LIMINAL_LINK", "loopback")  # its databases through a link, as from there
     monkeypatch.setattr(mounts, "foreign", lambda p, mounts=None: True)  # Windows' data, seen from inside WSL
     assert cli.cmd_history(run, settings) == 0 and "copied by the system whose drive the data is on" in logged[-1]
     assert claims.mine(db) == {} and not db.with_name(cli.HISTORY_LOCK).exists()  # nothing taken from here
@@ -78,6 +79,7 @@ def test_the_closed_months_copy_is_one_at_a_time_and_the_files_own_systems(db, l
 
 def test_a_backup_is_made_by_the_system_that_holds_the_files(db, monkeypatch, capsys):
     settings = load_settings(env={"LIMINAL_DB": str(db)}, env_file=None)
+    monkeypatch.setenv("LIMINAL_LINK", "loopback")  # its databases through a link, as from there
     monkeypatch.setattr(mounts, "foreign", lambda p, mounts=None: True)
     with pytest.raises(SystemExit) as e:
         cli.cmd_admin(Namespace(action="backup", ticks=False, dest=None), settings)
