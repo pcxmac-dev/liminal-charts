@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from liminal_libs.storage import Store, feeds_backup_dir
+import pytest
+
+from liminal_libs.storage import Store, feeds_backup_dir, link
 
 
 def _trade(ns: int, seq: int = 1, price: float = 10.0) -> dict:
@@ -109,6 +111,8 @@ def test_grouped_days_and_denied(store):
     assert store.clear_denied("s") == 1
 
 
+@pytest.mark.skipif(link.forced() == "loopback", reason="a backup is the work of the system that holds the files: a "
+                    "process that reaches them through the link is refused it (liminal-libs, tests/test_link.py)")
 def test_backup_and_integrity(tmp_path):
     with Store(tmp_path / "db" / "m.db") as s:
         s.upsert_trades("s", "X", [_trade(1)])

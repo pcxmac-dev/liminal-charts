@@ -120,3 +120,27 @@ def test_nothing_is_fetched_while_this_systems_clock_is_off_the_datas_systems(db
         with cli.api_run(Namespace(source="massive"), settings, "sync"):
             pytest.fail("nothing is fetched while the clocks disagree")
     assert logged == [f"massive: {said}"] and claims.held(db) == []  # said in the log; no run was begun
+
+
+def test_a_database_that_is_behind_is_said_at_the_command_line_and_left_as_it_is(db, monkeypatch, capsys):
+    """The suite inside WSL on a newer version than the one running on Windows: nothing of the database's layout is
+    changed from there (liminal-libs, tests/test_owners_layout.py); the command says so in words and ends."""
+    import sqlite3
+    from contextlib import closing
+
+    with closing(sqlite3.connect(db)) as raw:  # as software from before claims left it
+        raw.executescript("DROP TABLE claims; DROP TABLE claim_tokens;")
+    before = db.read_bytes()
+    monkeypatch.setenv("LIMINAL_DB", str(db))
+    monkeypatch.setenv("LIMINAL_LINK", "loopback")
+    monkeypatch.setattr(mounts, "foreign", lambda p, mounts=None: True)
+    assert cli.main(["status"]) == 2
+    said = capsys.readouterr().err
+    assert "is on another system's drive and behind this software (no table claims, claim_tokens)" in said
+    assert "nothing of it is changed from here" in said and "Traceback" not in said
+    from liminal_libs.storage import link
+
+    for held in list(link._links.values()):
+        held.close()
+    link._links.clear()
+    assert db.read_bytes() == before
