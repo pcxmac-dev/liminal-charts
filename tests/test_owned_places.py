@@ -106,3 +106,17 @@ def test_the_queue_page_shows_the_other_installations_job_running_while_it_is_at
             assert app.plugin_fetching("massive")["state"] == "fetching"  # its run there: this page says so too
         finally:
             other.close()
+
+
+def test_nothing_is_fetched_while_this_systems_clock_is_off_the_datas_systems(db, logged, monkeypatch):
+    """A suite inside WSL on Windows' data: WSL's clock runs seconds off Windows' at times (it jumped ten seconds, back
+    and forth, while these suites ran there). A run decides by the clock; until the two agree nothing is sent."""
+    from liminal_libs.storage import link
+
+    settings = load_settings(env={"LIMINAL_DB": str(db), "MASSIVE_API_KEY": "k"}, env_file=None)
+    said = "this system's clock is 9.0 s behind the clock of Windows, which holds the data: nothing is fetched from here"
+    monkeypatch.setattr(link, "clock_off", lambda path: said)
+    with pytest.raises(cli.Busy, match="9.0 s behind the clock of Windows"):
+        with cli.api_run(Namespace(source="massive"), settings, "sync"):
+            pytest.fail("nothing is fetched while the clocks disagree")
+    assert logged == [f"massive: {said}"] and claims.held(db) == []  # said in the log; no run was begun

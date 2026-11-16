@@ -140,6 +140,13 @@ def api_run(args, settings: Settings, command: str, lock: bool = True) -> Iterat
             print(f"offline (LIMINAL_OFFLINE): nothing sent to {args.source}")
             yield None, store, log  # type: ignore[misc]
         return
+    from liminal_libs.storage import link
+
+    off = link.clock_off(settings.db_path)
+    if off:  # a suite on another system than the data's, its clock off that system's: what a run decides by the
+        # clock (a day's end, a session's open) would not agree with what the other side reads
+        log(f"{args.source}: {off}")
+        raise Busy(off)
     with Store(settings.db_path) as store, (run_lock(settings.db_path, args.source) if lock else nullcontext()):
         if lock:
             store.close_abandoned_runs(args.source)  # we hold its lock, so a run of it still "running" died
