@@ -27,13 +27,17 @@ from liminal_libs.apps import Refused, serve_object
 from liminal_libs.config import Settings
 from liminal_libs.storage import LayoutLimit, Store
 from liminal_libs.storage.markets import mic_names
-from liminal_libs.storage.requests import KINDS as REQUEST_KINDS, OPEN as OPEN_REQUEST, read_status
+from liminal_libs.storage.requests import AUDIT as AUDIT_KIND, KINDS as ALL_KINDS, OPEN as OPEN_REQUEST, read_status
 from . import activity, astro, web
 from ..frame import ChartsApp
 from .bars import CALENDAR, PRICE_BASED, TIME_TYPES, BarEngine, Style, _BoundedCache, resample
 from liminal_libs.calc.derivatives import Model
 from .stats import details_subset, key_stats
 from .web import MAX_BODY, PROFILE_COOKIE, PROFILE_HEADER, STATIC, WRITE_HEADER, fetcher_page  # noqa: F401 (shared with the front, web.py)
+
+# What the request box asks about a symbol. An audit is a request too (liminal-libs 1.64.0), asked on the auditor's page
+# in the Plugins view (POST /api/auditor/run), not here: the box keeps to what a feed's run collects.
+REQUEST_KINDS = tuple(k for k in ALL_KINDS if k != AUDIT_KIND)
 
 
 def finite(data):
@@ -995,11 +999,12 @@ class ChartApp:
         default. Only a plan variable with choices, to one of them: never a key. The app uses it at
         its next look at the settings, the sync from its next run."""
         from liminal_libs.sources import providers
-        from liminal_libs.sources.registry import assistants
+        from liminal_libs.sources.registry import assistants, auditors
 
         if self.settings.offline:
             raise RuntimeError("offline (LIMINAL_OFFLINE): this copy of the app saves no settings")
-        p = providers().get(plugin) or assistants().get(plugin)  # an AI assistant's plan, model and caps too
+        # an AI assistant's plan, model and caps too, and the auditors' options
+        p = providers().get(plugin) or assistants().get(plugin) or auditors().get(plugin)
         if p is None or variable not in p.plan_choices:
             raise LookupError(f"{plugin} has no plan variable {variable}")
         if value is not None:
@@ -2290,7 +2295,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                     if method == "POST" and parts[3:] == ["reset"]:
                         return self._json(app.trade_reset(body))
                     return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-                if parts[:3] == ["", "api", "databases"]:  # its frame's own writes (the integrator's: the instances)
+                # its frame's own writes (the integrator's: the database plugins' instances, the auditors' asks)
+                if parts[:3] in (["", "api", "databases"], ["", "api", "auditor"]):
                     return self._frame_write(method, urlparse(self.path).path, body)
                 if parts[:3] != ["", "api", "layouts"]:
                     return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
@@ -2478,7 +2484,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
         def _frame_write(self, method: str, path: str, body: dict) -> None:
             """A write none of this API's routes answers, asked of its frame (liminal_libs.apps.App.api): on the
             integrator's page the database plugins' instances (POST /api/databases/instances: liminal-integrator 1.12.0;
-            the user, 2026-11-15: "in each plugin can setup either new databases or connections to existing databases").
+            the user, 2026-11-15: "in each plugin can setup either new databases or connections to existing databases")
+            and what the auditor's page asks (POST /api/auditor/run, an audit or a sweep now: liminal-integrator 1.13.0).
             A refusal is the frame's own, with the argument that accepts it when it names one (its `answer`): the page
             asks that as its second question. A copy of the app that reads only changes nothing."""
             if app.settings.read_only:

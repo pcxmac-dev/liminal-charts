@@ -2145,6 +2145,9 @@ def main(argv: list[str] | None = None) -> int:
         from liminal_libs.storage import set_read_only
 
         set_read_only(settings.read_only)  # LIMINAL_READONLY: every store this command opens reads only
+        from liminal_libs import auditing
+
+        auditing.set_policy(auditing.policy_of(settings))  # the auditors' policy: its plugin's, else the defaults
         settings = sourcing.Scans.apply(settings)  # each plugin's plan as its scan found it, unless you set it
 
         set_tick_access(not settings.bars_only)  # bars-only: no store this command opens reads ticks

@@ -652,7 +652,22 @@ A plugin that fails to load is left out and reported (`plugins`), never fatal.
     card), answered by the integrator (`GET /api/databases/plugins`, `POST /api/databases/instances`:
     liminal-integrator 1.12.0), which this app's data API leaves to its frame (`_frame_write`). A
     plugin written for 2.0 to 2.2 loads unchanged.
-  - **What a plugin may rely on (API 1.0; 2.0: the classes; 2.1: the data specs; 2.2: what it attaches to; 2.3: the database plugins)**, and nothing else of `liminal`:
+  - **2.4** (2026-11-18; the user: "For the integrator, there needs to be a plugin called auditor and it
+    will manage the configuration of auditing data", and "an auditor plugin, for auditing sources and
+    maintaining the integrity of the feeds; for the integrator") is the auditors' plugin
+    (`auditing.AuditorPlugin`, liminal-libs 1.64.0; `AUDITOR` in its module; `registry.auditors()`, one
+    for an app): plugin-integrator-auditor. It holds seven options, each with its choices and its
+    default first (`auditing.CHOICES`), and its `settings` are the auditors' `Policy`; it has no key, no
+    database, no fetching and no scan of a provider. The auditors themselves are the library's and run
+    without it, on the defaults: the fetch cache (`storage/pulls.py`, `spool.py`: what a feed is asked
+    for is on disk before the database has it, and is loaded from there), the copy audit of each pull
+    against what was stored (`auditing.audit_pull`: a pull's files go only once it passed), and the
+    sweep of every watched series for days that should hold bars and do not (`auditing.Sweep`). The
+    Plugins view lists it under Auditing (below); what its page asks is answered by the integrator
+    (`GET /api/auditor`, `POST /api/auditor/run`: liminal-integrator 1.13.0), which this app's data API
+    leaves to its frame like the Databases view's forms. A plugin written for 2.0 to 2.3 loads
+    unchanged.
+  - **What a plugin may rely on (API 1.0; 2.0: the classes; 2.1: the data specs; 2.2: what it attaches to; 2.3: the database plugins; 2.4: the auditors' plugin)**, and nothing else of `liminal`:
     `sources.registry`: `PLUGIN_API`, `RECORD_API`, `FeedPlugin`, `Plugin`, `Provider`, `KeyVar`,
     `Scanned`, and `Report`, `Limits`, `Capability` for a `reporter`; the helpers `limiter`,
     `machine_caps`, `public_client`, `minute_window`. `sources.plugin`: the same classes and records.
@@ -661,7 +676,8 @@ A plugin that fails to load is left out and reported (`plugins`), never fatal.
     `DocumentData` and its kinds, their parts, `Product`. `sources.apis` (2.2): `Api`, `Link`, `Area`,
     `Call`, `problems`, `dead_links`. `storage.databases` (2.3): `DatabasePlugin`, `Instance`, `Share`,
     `Made`, `Refusal`, `variable_of`, `now_iso`, `new_password`, `SUFFIXES`, `DATA`, `listening`,
-    `is_local`. `freshness`: `Delay` (a feed's `delays`). `sources.dataset` (1.4):
+    `is_local`. `auditing` (2.4): `AuditorPlugin`, `Policy`, `CHOICES`, `ABOUT`. `freshness`: `Delay`
+    (a feed's `delays`). `sources.dataset` (1.4):
     `Dataset`, `Parsed` and the parsers' helpers (`ms`, `day_of`, `at`, `months_after`, `num`,
     `text`). `sources.stream` (1.5): `Live`, `Reconnect`, `Refused`, `Notice`, `PING`, `trade`, `ns`.
     `sources.base`:
@@ -949,6 +965,16 @@ registry's user Environment key, and the app's own environment, which load_setti
 saved variables); null removes it. Only a plugin's own plan variable with choices, to one of them:
 never a key, never a variable without choices. The app uses it at its next look at the settings, the
 sync from its next run. An offline copy refuses: it shares the user's real variables.
+
+The auditors' plugin has a group of its own, Auditing, at the foot of the list (2026-11-18;
+`_auditor_entry`, `plugins.js` `auditMainHtml`). In the middle: its seven options, each a dropdown
+saved like a plan (`POST /api/plugins/plan`); Audit now and Sweep now (`POST /api/auditor/run`
+{what}: a request of kind `audit` in the requests' ledger, which the fetcher hands to a short-lived
+auditors' process, one at a time for a database); the fetch cache by state and size against its cap;
+the last sweep and where the next one starts; and the findings (their kind, the feed and symbol, the
+span, what was done about each). On the right its counts. Its entry reads the main file's `pulls`,
+`pull_files` and `audit_findings` and the requests' ledger: no request to any provider. The Fetcher's
+request box keeps to its own kinds (`REQUEST_KINDS`: bars, live); an audit is asked here.
 
 ## Which source delivers what (2026-10-27)
 

@@ -847,12 +847,139 @@
       ${p.signup ? `<div class="p-muted small">From ${signupHtml(p.signup)}</div>` : ''}`;
   }
 
+  // -- the auditors (the Auditing group: the auditors' plugin, plugin API 2.4) -----------------------
+  // The user, 2026-11-18: "an auditor plugin, for auditing sources and maintaining the integrity of the feeds". Its
+  // page: its options (each a choice saved like a plan's), Audit now and Sweep now (POST /api/auditor/run, the
+  // integrator's own route: a request of kind audit on the fetcher's stack), the audits asked for, the fetch cache by
+  // state and size, the last sweep and where its round is, and the findings. Read from /api/plugins like every entry.
+  const AUDIT_STATE = { open: 'open', repaired: 'put right from the cache', asked: 'asked of the feed again',
+                        absent: 'absent at the feed', closed: 'settled' };
+  const AUDIT_KIND = { 'copy-missing': 'bars not stored', 'copy-differs': 'bars stored with other values',
+                       'cache-file': 'a cache file damaged', 'cut-pull': 'a pull cut off', hole: 'a hole',
+                       'empty-span': 'a span held with nothing in it', integrity: 'bars a rule caught' };
+  const PULL_STATE = { open: 'being written', complete: 'complete', cut: 'cut off' };
+  const PULL_AUDIT = { ok: 'audited, matches', repaired: 'audited, put right', mismatch: 'audited, a finding kept' };
+  const ASKED = { '*': 'a sweep', '*CACHE': 'what waits in the cache' };
+  const dayOf = (ms) => (ms == null ? '–' : new Date(ms).toISOString().slice(0, 10));
+  const audit = { busy: false };
+
+  async function auditRun(what) {
+    if (audit.busy) return;
+    audit.busy = true;
+    note = '';
+    render();
+    try {
+      const res = await fetch('/api/auditor/run', { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify({ what }) });
+      const out = await res.json().catch(() => ({}));
+      note = res.ok ? [out.said, ...(out.lines || [])].filter(Boolean).join(' ') : out.error || res.statusText;
+    } catch (err) { note = String(err.message || err); }
+    audit.busy = false;
+    render();
+    setTimeout(load, 1_500);
+  }
+
+  function auditOptionsHtml(p) {
+    const rows = p.options.map((o) => `<tr><td>${esc(o.label || o.name)}<div class="p-muted small"><code>${esc(o.name)}</code></div></td>
+        <td>${optionCell(p, o)}</td><td class="pl-origin pl-${esc(o.origin)}">${esc(ORIGIN[o.origin])}</td></tr>`).join('');
+    return `<h4>Options</h4>
+      <table class="act-table ex-mini pl-plan"><thead><tr><th>Option</th><th>Value</th><th>From</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="p-muted small">Saved as your user environment variables like a plan: a feed's next run and the next sweep keep to them.</div>`;
+  }
+
+  function auditNowHtml(p) {
+    const off = data.offline || audit.busy;
+    const asked = (p.audit.asked || []).map((r) => `<div class="small pl-audit-asked">${esc(ASKED[r.symbol] || r.symbol)}: ${esc(r.state)}${
+      r.detail ? ` · ${esc(r.detail)}` : ''}</div>`).join('');
+    return `<h4>Now</h4>
+      <div class="pl-audit-run">
+        <button type="button" data-audit-run="audit"${off ? ' disabled' : ''} title="Every pull that waits in the fetch cache is held against what is stored">Audit now</button>
+        <button type="button" data-audit-run="sweep"${off ? ' disabled' : ''} title="A sweep run now, from where the last one stopped, for the minutes set">Sweep now</button>
+      </div>
+      ${data.offline ? whyNot('This offline copy of the app asks for nothing') : ''}
+      ${asked ? `<div class="p-muted small">Asked for:</div>${asked}` : ''}`;
+  }
+
+  function auditCacheHtml(p) {
+    const c = p.audit.cache;
+    const rows = c.states.map((s) => `<tr><td>${esc(PULL_STATE[s.state] || s.state)}${s.audit ? ` · ${esc(PULL_AUDIT[s.audit] || s.audit)}`
+      : s.state === 'open' ? '' : ' · waits for its audit'}</td>
+        <td class="num">${num(s.pulls)}</td><td class="num">${num(s.files)}</td><td class="num">${size(s.bytes)}</td>
+        <td class="num">${num(s.rows)}</td><td class="p-muted">${esc(ago(s.newest))}</td></tr>`).join('');
+    return `<h4>The fetch cache</h4>
+      ${c.on ? '' : '<div class="pl-warn">Switched off (LIMINAL_FETCH_CACHE): what is fetched goes to the database without a cache file, and is not audited.</div>'}
+      ${rows ? `<table class="act-table ex-mini"><thead><tr><th>Pulls</th><th class="num">Count</th><th class="num">Files kept</th>
+          <th class="num">On disk</th><th class="num">Bars</th><th>Newest</th></tr></thead><tbody>${rows}</tbody></table>`
+        : '<div class="p-muted small">Empty: every pull so far was audited and its files removed.</div>'}
+      <div class="p-muted small">${size(c.unverifiedBytes)} not audited yet, of a cap of ${size(c.capBytes)}; ${size(c.keptBytes)} kept in all.
+        <code>${esc(c.folder)}</code></div>`;
+  }
+
+  function auditSweepHtml(p) {
+    const s = p.audit.sweep, last = s.last, pol = p.audit.policy;
+    const cadence = pol.sweepHours ? `every ${pol.sweepHours >= 48 ? `${num(pol.sweepHours / 24)} days` : `${num(pol.sweepHours)} h`}, ${num(pol.sweepMinutes)} min a run`
+      : 'no sweep by itself (off)';
+    if (!last) return `<h4>The sweep</h4><div class="p-muted small">None has run yet (${esc(cadence)}).</div>`;
+    return `<h4>The sweep</h4>
+      <div class="tiles ex-tiles">
+        ${tile('Last run', esc(ago(last.at)), `${num(last.seconds)} s · ${esc(cadence)}`)}
+        ${tile('Series gone over', num(last.series), `of ${num(last.watched)} watched${last.complete ? '' : ' · goes on next run'}`)}
+        ${tile('Days looked at', num(last.days), `${num(last.pulls)} pulls audited`)}
+        ${tile('Holes found', num(last.holes), `${num(last.absent)} absent · ${num(last.closed)} settled`)}
+      </div>
+      <div class="p-muted small">Round ${num(s.round + 1)}${s.cursor ? `, at ${esc(s.cursor)}` : ''}. Each round reads one month further back of every series.</div>`;
+  }
+
+  function auditFindingsHtml(p) {
+    const f = p.audit.findings;
+    const counts = Object.entries(f.counts || {}).map(([state, n]) => `${num(n)} ${AUDIT_STATE[state] || state}`).join(' · ');
+    const why = (x) => {
+      const d = x.detail || {};
+      return d.evidence ? d.evidence : d.why ? d.why : d.rules ? Object.entries(d.rules).map(([rule, n]) => `${rule}: ${n}`).join(', ')
+        : d.repaired != null ? `${num(d.repaired)} put in from the cache` : '';
+    };
+    const rows = (f.latest || []).map((x) => `<tr><td>${esc((x.updated_at || x.at || '').slice(0, 16).replace('T', ' '))}</td>
+        <td>${esc(AUDIT_STATE[x.state] || x.state)}</td><td>${esc(AUDIT_KIND[x.kind] || x.kind)}</td>
+        <td>${esc(x.feed)}${x.ticker ? `:${esc(x.ticker)}` : ''}</td><td>${esc(x.timespan || '')}</td>
+        <td>${esc(dayOf(x.start_ms))}${x.end_ms != null && x.end_ms - x.start_ms > 864e5 ? ` to ${esc(dayOf(x.end_ms - 1))}` : ''}</td>
+        <td class="num">${num(x.count)}</td><td class="p-muted">${esc(why(x))}</td></tr>`).join('');
+    return `<h4>Findings</h4>
+      ${rows ? `<div class="p-muted small">${esc(counts)}</div>
+        <table class="act-table ex-mini pl-findings"><thead><tr><th>When (UTC)</th><th>State</th><th>What</th><th>Series</th><th>Frame</th>
+          <th>Days</th><th class="num">Count</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table>`
+        : '<div class="p-muted small">None: nothing an auditor could not put right, and nothing missing with evidence that it should be there.</div>'}`;
+  }
+
+  function auditMainHtml(p) {
+    const a = p.audit;
+    if (a.error) return `<div class="pl-warn">The auditors' tables could not be read (${esc(a.error)}).</div>${auditOptionsHtml(p)}${apisHtml(p, [])}`;
+    return `${auditOptionsHtml(p)}${auditNowHtml(p)}${auditCacheHtml(p)}${auditSweepHtml(p)}${auditFindingsHtml(p)}${apisHtml(p, [])}`;
+  }
+
+  function auditSideHtml(p) {
+    const a = p.audit, c = a.cache || {}, pol = a.policy || {};
+    return `<h3>${esc(p.title)} ${chip(p.state)}</h3>
+      <div class="p-muted small">${esc(p.about)}</div>${release(p)}
+      ${a.error ? '' : `<div class="tiles ex-tiles">
+        ${tile('Findings open', num(a.findings.open), 'not settled yet')}
+        ${tile('Not audited yet', size(c.unverifiedBytes || 0), `of a cap of ${size(c.capBytes || 0)}`)}
+        ${tile('Last sweep', esc(a.sweep.last ? ago(a.sweep.last.at) : 'never'), `round ${num((a.sweep.round || 0) + 1)}`)}
+        ${tile('On a mismatch', pol.repair ? 'repair' : 'flag only', pol.onUpdate ? 'audited as each symbol updates' : 'audited by the sweep alone')}
+      </div>`}
+      <h4>What it does</h4>
+      <div class="p-muted small">What a feed sends is written to the fetch cache before any of it reaches a database, and every write is made
+        from the cache. Each pull is then held against what was stored, value by value, and its files go once it matches.
+        The sweep goes over every watched series in turn for days that should hold bars and do not.</div>
+      <div class="p-muted small">Nothing stored is overwritten or deleted by an auditor. A passing audit says the copy into the database
+        was exact, not that the feed's data is right.</div>`;
+  }
+
   function mainHtml() {
     const pub = publisher();
     if (pub) return pubMainHtml(pub);
     const p = plugin();
     if (!p) return '<div class="empty">No plugin found.</div>';
     if (p.ai) return aiMainHtml(p);
+    if (p.audit) return auditMainHtml(p);
     return `${setupHtml(p.name, p.keys)}${fetchingHtml(p.name)}${feedsHtml(p)}${planHtml(p)}${optionsHtml(p)}${limitsHtml(p)}${capabilitiesHtml(p)}${scanHtml(p)}
       ${p.notes.length ? `<h4>Notes</h4>${p.notes.map((n) => `<div class="small">${esc(n)}</div>`).join('')}` : ''}${publishersHtml(p)}${databasesHtml(p)}${apisHtml(p, pubPartsOf(p))}`;
   }
@@ -864,6 +991,7 @@
     const p = plugin();
     if (!p) return '';
     if (p.ai) return aiSideHtml(p);
+    if (p.audit) return auditSideHtml(p);
     const u = p.usage;
     const used = u.perDay ? Math.min(100, (u.today / u.perDay) * 100) : 0;
     const first = p.delivery.filter((e) => e.first), standby = p.delivery.filter((e) => !e.first);
@@ -896,11 +1024,12 @@
   function render() {
     if (!data) { box.innerHTML = '<div class="empty">Loading the plugins…</div>'; return; }
     const p = plugin(), pub = publisher();
-    const setUp = data.plugins.filter((x) => !x.ai && x.configured && x.state !== 'no key').length;
-    const feedCount = data.plugins.filter((x) => !x.ai).length;
+    const setUp = data.plugins.filter((x) => !x.ai && !x.audit && x.configured && x.state !== 'no key').length;
+    const feedCount = data.plugins.filter((x) => !x.ai && !x.audit).length;
     const pubPlugins = (data.publishers || []).filter((q) => !parentOf(q)).length;  // its parts in it
     const head = pub ? `publisher · ${pubKind(pub)} · ${pubCount(pub)}`
       : p?.ai ? `AI assistant · ${p.ai.vendor} · ${p.ai.plan || 'no plan'} · ${p.ai.model}`
+      : p?.audit ? 'the auditors · the integrity of what is fetched'
       : p ? `${p.archive ? 'closed archive' : p.feeds.some((f) => f.archive) ? 'feed, a closed archive in part' : 'feed'} · ${p.kind} data · ${p.assets.join(', ')}` : '';
     const cols = [
       `<div class="view-head"><div><h2>Plugins</h2>
@@ -965,10 +1094,12 @@
       document.getElementById('railFetcher')?.click();
       return;
     }
-    const t = e.target.closest('[data-plugin],[data-rescan],[data-recheck],[data-pause],[data-save-key],[data-remove-key],[data-ai-ask]');
+    const t = e.target.closest('[data-plugin],[data-rescan],[data-recheck],[data-pause],[data-save-key],[data-remove-key],[data-ai-ask],[data-audit-run]');
     if (!t || t.disabled) return;
     if (t.dataset.aiAsk) {
       aiAsk(t.dataset.aiAsk);
+    } else if (t.dataset.auditRun) {
+      auditRun(t.dataset.auditRun);
     } else if (t.dataset.saveKey) {
       const input = box.querySelector(`input.pl-key[data-var="${CSS.escape(t.dataset.saveKey)}"]`);
       const value = input?.value.trim();

@@ -106,7 +106,7 @@ def test_the_plugins_view_lists_the_assistants_in_their_own_group(installed, tmp
     app, store, saved = _app(tmp_path, monkeypatch)
     try:
         out = app.plugins()
-        assert out["groups"] == ["Feeds with keys", "Public feeds", "AI assistants"]
+        assert out["groups"] == ["Feeds with keys", "Public feeds", "AI assistants", "Auditing"]
         e = next(p for p in out["plugins"] if p["name"] == "acme-ai")
         assert e["group"] == "AI assistants" and e["state"] == "no key" and e["kind"] == "assistant" and e["api"] == "2.0"
         assert [k["name"] for k in e["keys"]] == ["ACME_AI_API_KEY", "ACME_AI_ACCOUNT"] and not e["keys"][1]["secret"]

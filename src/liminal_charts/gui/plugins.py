@@ -39,10 +39,10 @@ from datetime import date, datetime
 
 from liminal_libs.sources import apis as apis_mod
 from liminal_libs.sources import providers
-from liminal_libs.sources.registry import (PLUGIN_API, assistants, database_row, errors, key_row, label, plugin_databases,
-                                          plugin_feeds, plugin_keys, plugin_of, publisher_parts)
+from liminal_libs.sources.registry import (PLUGIN_API, assistants, auditors, database_row, errors, key_row, label,
+                                          plugin_databases, plugin_feeds, plugin_keys, plugin_of, publisher_parts)
 
-GROUPS = ("Feeds with keys", "Public feeds", "AI assistants")
+GROUPS = ("Feeds with keys", "Public feeds", "AI assistants", "Auditing")
 RECENT_EVALUATIONS = 8  # an assistant's last answers shown on its page
 
 
@@ -197,6 +197,38 @@ def _assistant_entry(p, store, settings, scans: dict, running: dict | None) -> d
     return _fold(entry, [])
 
 
+def _auditor_entry(p, store, settings) -> dict:
+    """The auditors' plugin's entry (the Auditing group; plugin API 2.4, liminal_libs.auditing; the user, 2026-11-18:
+    "an auditor plugin, for auditing sources and maintaining the integrity of the feeds"): its options, each a choice
+    made here like a plan's, and where the auditors stand (`audit`): their policy, the fetch cache by state and size,
+    the last sweep and where its round is, the findings, and the audits asked for. Read from the main file: nothing
+    is asked of a feed."""
+    from liminal_libs import auditing
+
+    policy = auditing.policy_of(settings)
+    try:
+        audit = auditing.overview(store, policy)
+        audit["asked"] = [{"id": r["id"], "symbol": r["symbol"], "state": r["state"], "by": r["by"], "detail": r["detail"]}
+                          for r in store.requests_open() if r["kinds"] == ("audit",)]
+    except Exception as e:  # noqa: BLE001 - a main file from before the fetch cache (another system's, behind): said
+        audit = {"error": f"{type(e).__name__}: {e}"}
+    waiting = (audit.get("findings") or {}).get("open", 0)
+    options = [{**o, "label": auditing.ABOUT.get(o["name"], o["name"])} for o in _options(p, settings)]
+    entry = {
+        "name": p.name, "title": p.title, "label": p.name, "about": p.about, "origin": p.origin, "version": p.version,
+        "api": p.api, "apis": apis_mod.as_dicts(p.apis), "apiFacts": apis_mod.facts_of(p), "signup": "", "group": GROUPS[3],
+        "archive": False, "kind": "auditor", "assets": [], "keyless": [], "serves": [], "configured": True, "keysSet": True,
+        "keys": [], "publishers": [], "state": "ready", "kill": None,
+        "plan": {"tier": f"{waiting:,} findings open" if waiting else "nothing open", "vars": [], "found": {}, "alike": {},
+                 "differs": [], "note": ""},
+        "options": options, "limits": {"published": ""}, "capabilities": [], "capabilitiesWithKey": False, "streams": [],
+        "notes": [], "scan": {"has": False, "at": None, "results": [], "running": False},
+        "usage": {"today": 0, "perDay": None, "perRun": None}, "watched": 0, "delivery": [], "load": 0.0,
+        "audit": audit,
+    }
+    return _fold(entry, [])
+
+
 def _plan(p, settings, scan: dict | None) -> dict:
     """Its plan here: each plan variable with its origin (you, its scan, the default), what its last
     scan found, where that and your own setting disagree, and what its scan cannot tell."""
@@ -268,6 +300,7 @@ def view(store, settings, feeds: dict, scheme, scans: dict, running: dict | None
         }
     out = [_fold(e, [entries[n] for n in plugin_feeds(name)[1:]]) for name, e in entries.items() if plugin_of(name) == name]
     out += [_assistant_entry(p, store, settings, scans, running) for p in assistants().values()]
+    out += [_auditor_entry(p, store, settings) for p in auditors().values()]  # the auditors' plugin (2.4)
     for e in out:
         e["databases"] = [database_row(d, store.path) for d in plugin_databases(e["name"])]
     return {"plugins": out, "groups": list(GROUPS), "errors": [{"where": w, "why": why} for w, why in errors()],
