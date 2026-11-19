@@ -970,7 +970,8 @@ The auditors' plugin has a group of its own, Auditing, at the foot of the list (
 `_auditor_entry`, `plugins.js` `auditMainHtml`). In the middle: its seven options, each a dropdown
 saved like a plan (`POST /api/plugins/plan`); Audit now and Sweep now (`POST /api/auditor/run`
 {what}: a request of kind `audit` in the requests' ledger, which the fetcher hands to a short-lived
-auditors' process, one at a time for a database); the fetch cache by state and size against its cap;
+auditors' process, one at a time for a database); the fetch cache by state and size against its cap,
+and the pulls verified so far (counted: a pull that passed is not kept in the ledger);
 the last sweep and where the next one starts; and the findings (their kind, the feed and symbol, the
 span, what was done about each). On the right its counts. Its entry reads the main file's `pulls`,
 `pull_files` and `audit_findings` and the requests' ledger: no request to any provider. The Fetcher's

@@ -79,6 +79,7 @@ def test_the_auditors_entry_says_its_options_and_where_the_auditors_stand(tmp_pa
     audit = entry["audit"]
     assert audit["policy"]["keepDays"] == 7 and audit["cache"]["on"] is True and audit["cache"]["unverifiedBytes"] > 0
     assert [(s["state"], s["audit"], s["pulls"]) for s in audit["cache"]["states"]] == [("complete", None, 1)]
+    assert audit["cache"]["verified"]["pulls"] == 0 and audit["cache"]["verified"]["today"]["rows"] == 0  # none audited yet
     assert audit["sweep"]["last"]["series"] == 1 and audit["findings"]["open"] == 1
     assert [(f["kind"], f["ticker"], f["state"]) for f in audit["findings"]["latest"]] == [("hole", "AAA", "open")]
     assert audit["asked"] == [{"id": 1, "symbol": "*", "state": "waiting", "by": "page", "detail": None}] and p.id
@@ -133,7 +134,7 @@ def test_the_views_script_draws_the_auditors_page():
     for line in ("if (p.audit) return auditMainHtml(p);", "if (p.audit) return auditSideHtml(p);",
                  "fetch('/api/auditor/run', { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify({ what }) })",
                  'data-audit-run="audit"', 'data-audit-run="sweep"', "auditRun(t.dataset.auditRun);",
-                 "[data-ai-ask],[data-audit-run]'", "!x.ai && !x.audit"):
+                 "[data-ai-ask],[data-audit-run]'", "!x.ai && !x.audit", "const v = c.verified || {}, day = v.today || {};"):
         assert line in js, line
     body = js[js.index("function auditFindingsHtml"):js.index("function auditMainHtml")]
     assert "esc(why(x))" in body and "esc(x.feed)" in body and "esc(x.ticker)" in body  # what a finding says is text

@@ -901,6 +901,10 @@
 
   function auditCacheHtml(p) {
     const c = p.audit.cache;
+    // a pull that passed its audit is counted, not kept: the table is what is on disk and what is still to be judged
+    const v = c.verified || {}, day = v.today || {};
+    const verified = v.pulls ? `<div class="p-muted small">Verified: ${num(day.pulls || 0)} pulls (${num(day.rows || 0)} bars) today; ${num(v.pulls)} pulls (${num(v.rows)} bars, ${size(v.bytes)})${v.since ? ` since ${esc(String(v.since).slice(0, 10))}` : ''}${v.repaired ? `; ${num(v.repaired)} bars put in from the cache` : ''}.</div>`
+      : '';
     const rows = c.states.map((s) => `<tr><td>${esc(PULL_STATE[s.state] || s.state)}${s.audit ? ` · ${esc(PULL_AUDIT[s.audit] || s.audit)}`
       : s.state === 'open' ? '' : ' · waits for its audit'}</td>
         <td class="num">${num(s.pulls)}</td><td class="num">${num(s.files)}</td><td class="num">${size(s.bytes)}</td>
@@ -910,6 +914,7 @@
       ${rows ? `<table class="act-table ex-mini"><thead><tr><th>Pulls</th><th class="num">Count</th><th class="num">Files kept</th>
           <th class="num">On disk</th><th class="num">Bars</th><th>Newest</th></tr></thead><tbody>${rows}</tbody></table>`
         : '<div class="p-muted small">Empty: every pull so far was audited and its files removed.</div>'}
+      ${verified}
       <div class="p-muted small">${size(c.unverifiedBytes)} not audited yet, of a cap of ${size(c.capBytes)}; ${size(c.keptBytes)} kept in all.
         <code>${esc(c.folder)}</code></div>`;
   }
