@@ -9,6 +9,35 @@ from liminal_libs.sessions import ET, MarketCalendar
 
 pytest.importorskip("exchange_calendars")
 CAL = MarketCalendar()
+# The exchanges' calendars over a fixed span holding every date these tests name: the library builds them from 30
+# days back to 400 on (liminal_libs.sessions.world_calendar), so a dated test aged out of them a month after it was
+# written (CI, 2026-11-23: seven tests here failed with MinuteOutOfBounds, 2026-10-23 before the calendars' first
+# minute). The span is the library's own as it stood when the tests were written, 30 days before their dates
+# (2026-10-22 and 23) to 400 days on: an earlier start meets exchange_calendars' own errors (XTAE's special close of
+# 2026-01-04, a Sunday once its week moved to Monday-Friday). Built once a run, as the library builds them once a
+# process.
+SPAN = ("2026-09-23", "2027-11-28")
+_SPANNED: dict = {}
+
+
+def _spanned(name):
+    import exchange_calendars as xc
+
+    cal = _SPANNED.get(name)
+    if cal is None:
+        try:
+            cal = xc.get_calendar(name, start=SPAN[0], end=SPAN[1])
+        except Exception:  # an exchange whose holidays are published late: as far as it knows them
+            cal = xc.get_calendar(name, start=SPAN[0])
+        _SPANNED[name] = cal
+    return cal
+
+
+@pytest.fixture(autouse=True)
+def _calendars_over_a_fixed_span(monkeypatch):
+    from liminal_libs import sessions
+
+    monkeypatch.setattr(sessions, "world_calendar", _spanned)
 
 
 def _status(code, when):
