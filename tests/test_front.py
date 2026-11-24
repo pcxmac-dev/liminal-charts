@@ -446,3 +446,65 @@ def test_the_front_links_the_platform_through_the_icon_bridge(tmp_path, monkeypa
     assert front_mod.platform_url() is None and Front(tmp_path / "liminal.db", log=lambda m: None).platform() is None
     monkeypatch.delenv("LIMINAL_PLATFORM_URL")
     assert front_mod.platform_url() == "http://127.0.0.1:8775"
+
+
+class Profiles(BaseHTTPRequestHandler):
+    """The integrator's data API as far as the front's profile check needs it: the charts' profiles."""
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        body = json.dumps({"profiles": [{"id": 1, "name": "ada"}, {"id": 2, "name": "Bob"}], "current": None}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class NamedLogin(StandInLogin):
+    """A login whose session says who is signed in (liminal-login's Session: its user's name)."""
+
+    def session(self, handler):
+        return SimpleNamespace(user=SimpleNamespace(name="bob")) if "liminal_login_charts=tok" in (
+            handler.headers.get("Cookie") or "") else None
+
+
+def test_the_profile_cookie_opens_the_app_only_as_who_is_signed_in(tmp_path, monkeypatch):
+    """The review of 2026-11-21, item 26: after A signed out inside the login's page and B signed in, the charts opened
+    as A's profile (its cookie still A's). A profile cookie not of who is signed in is as none: the sign-in page,
+    which opens the right one. Without a login, or with no integrator to ask, the profile alone as before."""
+    up = ThreadingHTTPServer(("127.0.0.1", 0), Profiles)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    NamedLogin.STATIC = tmp_path
+    monkeypatch.setattr(ChartsApp, "LOGIN_CLASS", NamedLogin)
+    for var in ("LIMINAL_CHARTS_LOGIN", "LIMINAL_LOGIN_URL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("LIMINAL_FETCHER_PORT", str(up.server_address[1]))
+    front = Front(tmp_path / "liminal.db", log=lambda m: None)
+    srv, port = _serve(front)
+    try:
+        page = lambda cookie: _get(port, "/", {"Cookie": cookie})[1]  # noqa: E731
+        assert b'id="rail"' in page("mc_profile=2; liminal_login_charts=tok")  # bob's own profile (any case)
+        assert b'id="loginApp"' in page("mc_profile=1; liminal_login_charts=tok")  # ada's: the sign-in page
+        assert b'id="loginApp"' in page("mc_profile=9; liminal_login_charts=tok")  # a profile no longer there
+        assert b'id="loginApp"' in page("mc_profile=2")  # not signed in
+        assert front.profile_is_theirs(_req("mc_profile=1"), 1) is None  # nobody's name: cannot say
+        monkeypatch.setenv("LIMINAL_FETCHER_PORT", "none")  # no integrator to ask: the profile alone
+        assert b'id="rail"' in page("mc_profile=1; liminal_login_charts=tok")
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        front.close()
+        up.shutdown()
+        up.server_close()
+    monkeypatch.setenv("LIMINAL_CHARTS_LOGIN", "none")  # no login here: the profile alone, as before
+    front = Front(tmp_path / "liminal.db", log=lambda m: None)
+    srv, port = _serve(front)
+    try:
+        assert b'id="rail"' in _get(port, "/", {"Cookie": "mc_profile=1"})[1]
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        front.close()

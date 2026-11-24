@@ -154,6 +154,10 @@ class ChartApp:
         # (attach_live, settle_live; the user, 2026-11-01: no processes when the app is not in use).
         self._live, self._live_lock, self._live_watch = None, threading.Lock(), None
         self._derive_proc: subprocess.Popen | None = None  # a build started by start_derive
+        self._scan: subprocess.Popen | None = None  # a scan started by start_scan
+        # the rescan, the scan and the build each looked for and started under this lock, as the recheck under its own:
+        # two presses at once both found none running and started two (the review of 2026-11-21, item 26)
+        self._start_lock = threading.Lock()
         self._gov_lock = threading.Lock()  # gov/gov.db, opened on first use
         self._recheck: tuple | None = None  # a publisher's limits recheck: (thread, {name, since})
         self._recheck_lock = threading.Lock()
@@ -983,12 +987,13 @@ class ChartApp:
         scanned = providers().get(name) or assistants().get(name) if name is not None else None
         if name is not None and (scanned is None or not scanned.has_scan):
             raise LookupError(f"{name} has no capability scan")
-        if self._rescan_running():
-            raise RuntimeError("a rescan is already running")
         args = [sys.executable, "-m", "liminal_charts", "capabilities", *([name] if name else [])]
-        proc = self._spawn(args)
-        self._rescan = (proc, {"name": name, "since": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                               "pid": proc.pid})
+        with self._start_lock:  # one at a time: two presses at once started two
+            if self._rescan_running():
+                raise RuntimeError("a rescan is already running")
+            proc = self._spawn(args)
+            self._rescan = (proc, {"name": name, "since": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                   "pid": proc.pid})
         self._plugins_cache = None
         return {"started": True, "name": name, "pid": proc.pid}
 
@@ -1310,7 +1315,7 @@ class ChartApp:
         with self._paper_lock:
             return self.paper.place(body.get("ticker", ""), body.get("source") or "*", body.get("side", ""),
                                     body.get("qty", 0), body.get("type", "market"), body.get("limit"), body.get("stop"),
-                                    body.get("tif", "day"))
+                                    body.get("tif", "day"), client_id=body.get("clientId"))
 
     def trade_cancel(self, order_id: int) -> dict:
         with self._paper_lock:
@@ -1693,8 +1698,6 @@ class ChartApp:
             raise RuntimeError("offline (LIMINAL_OFFLINE): this copy of the app fetches nothing")
         if self._halted():
             raise RuntimeError("fetching is halted: resume it first")
-        if activity.lock_owner(self.store.path):
-            raise RuntimeError("a run is already in progress")
         args = [sys.executable, "-m", "liminal_charts", "scan", "--probe", "--fetch", "--all-sources"]
         if ticker:
             with self._lock:
@@ -1702,10 +1705,11 @@ class ChartApp:
             if ticker.upper() not in watched:
                 raise LookupError(f"{ticker} is not on the watchlist")
             args += ["--only", ticker.upper()]
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                stdin=subprocess.DEVNULL, creationflags=flags)
-        self._scan = proc  # keep a reference so it is reaped
+        with self._start_lock:  # one at a time: the run lock is taken only once the process is under way
+            if activity.lock_owner(self.store.path) or (self._scan is not None and self._scan.poll() is None):
+                raise RuntimeError("a run is already in progress")
+            proc = self._spawn(args)
+            self._scan = proc  # keep a reference so it is reaped
         return {"started": True, "pid": proc.pid}
 
     def inventory(self, ticker: str) -> dict:
@@ -1791,13 +1795,12 @@ class ChartApp:
             watched = {w["ticker"] for w in self.store.watchlist(ticker=ticker)}
         if ticker.upper() not in watched:
             raise LookupError(f"{ticker} is not on the watchlist")
-        if self._derive_proc is not None and self._derive_proc.poll() is None:
-            raise RuntimeError("a build of derived frames is already running")
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self._derive_proc = subprocess.Popen([sys.executable, "-m", "liminal_charts", "derive", "--tickers", ticker.upper()],
-                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                             stdin=subprocess.DEVNULL, creationflags=flags)
-        return {"started": True, "pid": self._derive_proc.pid}
+        with self._start_lock:  # one at a time: two presses at once started two
+            if self._derive_proc is not None and self._derive_proc.poll() is None:
+                raise RuntimeError("a build of derived frames is already running")
+            proc = self._derive_proc = self._spawn([sys.executable, "-m", "liminal_charts", "derive", "--tickers",
+                                                    ticker.upper()])
+        return {"started": True, "pid": proc.pid}
 
     def set_fetching(self, body: dict) -> dict:
         """Pause background fetching ({"paused": true, "minutes": n}: at most two hours; the open

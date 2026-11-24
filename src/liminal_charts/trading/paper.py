@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS paper_orders (
     done_at     INTEGER,            -- ms: when it filled (the bar it filled in), was cancelled or expired
     fill_px     REAL,
     fee         REAL,
-    looked_to   INTEGER             -- ms: bars before this have been looked at for it
+    looked_to   INTEGER,            -- ms: bars before this have been looked at for it
+    client_id   TEXT                -- the page's id for the attempt that placed it (a repeat returns this order)
 );
 CREATE INDEX IF NOT EXISTS paper_orders_account ON paper_orders (account, id);
 """
@@ -121,6 +122,17 @@ class PaperBook:
         self.conn, self.bars_after, self.last_price, self.asset = conn, bars_after, last_price, asset
         self.stored_to = stored_to
         conn.executescript(SCHEMA)
+        # an order sent twice (a double click, a request resent) is placed once: the page names each attempt, and a
+        # repeat of that name returns the order it placed (the review of 2026-11-21, item 26). Kept in the table, as
+        # everything of the account is, so a repeat still finds its order after the app restarts; a file made before
+        # it gets the column here (a copy that reads only cannot add it, and places nothing anyway).
+        try:
+            if "client_id" not in {r[1] for r in conn.execute("PRAGMA table_info(paper_orders)")}:
+                conn.execute("ALTER TABLE paper_orders ADD COLUMN client_id TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS paper_orders_client ON paper_orders (client_id)")
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.rollback()
         self._cols = [d[0] for d in conn.execute("SELECT * FROM paper_orders LIMIT 0").description]
 
     # -- the account -------------------------------------------------------------------------
@@ -149,21 +161,37 @@ class PaperBook:
 
     # -- orders --------------------------------------------------------------------------------
     def place(self, ticker: str, source: str, side: str, qty: float, type: str, limit: float | None = None,
-              stop: float | None = None, tif: str = "day", now_ms: int | None = None) -> dict:
+              stop: float | None = None, tif: str = "day", now_ms: int | None = None,
+              client_id: str | None = None) -> dict:
+        """A paper order placed. `client_id`: the page's name for this attempt; a repeat of it returns the order it
+        placed rather than placing another (the same order only: another under that name is refused)."""
         qty, limit, stop = check_order(side, qty, type, limit, stop, tif)
         ticker = (ticker or "").strip().upper()
         if not ticker:
             raise ValueError("a symbol is needed")
+        if client_id is not None and "client_id" in self._cols:
+            if not isinstance(client_id, str) or not 0 < len(client_id) <= 64:
+                raise ValueError("a client order id is a name of 1 to 64 characters")
+            row = self.conn.execute("SELECT * FROM paper_orders WHERE client_id=? ORDER BY id LIMIT 1",
+                                    (client_id,)).fetchone()
+            if row is not None:
+                done = self._row(row)
+                if (done["ticker"], done["side"], done["qty"], done["type"]) != (ticker, side, qty, type):
+                    raise ValueError(f"client order id {client_id} is another order's")
+                return done
         now = now_ms or _now()
         acct = self.account()["id"]
         # a series it cannot fill from (the composite, a continuous future) is refused here, not
         # stored to break every later match (ValueError, as the route answers 400)
         self.bars_after(source or "*", ticker, now, now)
+        named = "client_id" in self._cols  # a file that reads only and is older has no such column
         with self.conn:
             oid = self.conn.execute(
                 "INSERT INTO paper_orders (account, ticker, source, side, qty, type, limit_px, stop_px, tif, placed_at, "
-                "status, looked_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'working', ?)",
-                (acct, ticker, source or "*", side, qty, type, limit, stop, tif, now, now)).lastrowid
+                f"status, looked_to{', client_id' if named else ''}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'working', ?"
+                f"{', ?' if named else ''})",
+                (acct, ticker, source or "*", side, qty, type, limit, stop, tif, now, now,
+                 *((client_id,) if named else ()))).lastrowid
         self.match(now)
         return self.order(oid)
 

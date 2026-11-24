@@ -28,7 +28,10 @@ No database is opened here, and no pipe: the integrator holds the fetcher while 
 """
 from __future__ import annotations
 
+import json
 import threading
+import urllib.error
+import urllib.request
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -145,6 +148,49 @@ class Front:
         """Whether the browser of `handler` (a request: its cookies) is signed in to the login held here; None
         when there is none: the page then opens as before, on its profile alone."""
         return self.charts.signed_in(handler)
+
+    def signed_in_as(self, handler) -> str | None:
+        """The account name the browser of `handler` is signed in as to the login held here (its session's user); None
+        when there is no login, no session, or the login does not say."""
+        login = self.login_object()
+        if login is None:
+            return None
+        try:
+            name = getattr(getattr(login.session(handler), "user", None), "name", None)
+        except Exception:  # noqa: BLE001 - a login that cannot say: as if it said nothing
+            return None
+        return name if isinstance(name, str) and name else None
+
+    def profiles(self) -> list[dict] | None:
+        """The charts' profiles, asked of the integrator (they are in its store: this front opens no database); None
+        when it does not answer."""
+        port = self.integrator_port()
+        if port is None:
+            return None
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        try:
+            with opener.open(urllib.request.Request(f"http://127.0.0.1:{port}/api/profiles",
+                                                    headers={"Accept": "application/json"}), timeout=5) as resp:
+                found = json.loads(resp.read()).get("profiles")
+        except (urllib.error.URLError, OSError, ValueError, TimeoutError, AttributeError):
+            return None
+        return found if isinstance(found, list) else None
+
+    def profile_is_theirs(self, handler, profile_id: int) -> bool | None:
+        """Whether the profile `profile_id` (the browser's profile cookie) is the one of who is signed in to the login
+        held here: the profile under their account name, as the sign-in page finds or makes it (login.js, openAs). None
+        when it cannot be told: no login, nobody's name, or no integrator answering (the page then has no data of anyone's
+        to show). A profile no longer there is no one's."""
+        name = self.signed_in_as(handler)
+        if name is None:
+            return None
+        found = self.profiles()
+        if found is None:
+            return None
+        for p in found:
+            if isinstance(p, dict) and p.get("id") == profile_id:
+                return str(p.get("name") or "").lower() == name.lower()
+        return False
 
     def platform(self) -> Binding | None:
         """The platform this front links, when something answers at its address; None: no link (LIMINAL_PLATFORM_URL
@@ -328,9 +374,12 @@ def make_front_handler(front: Front):
             # the main page is the sign-in (the user, 2026-11-06: "i need a login or sign up on the main
             # page"): a browser not signed in to the login gets login.html, which holds the login's sign-in
             # and sign-up; so does one signed in as no profile yet (the page makes the profile for the user,
-            # then opens the app). Without a login here, the profile alone, as before.
+            # then opens the app). Without a login here, the profile alone, as before. A profile cookie that is not
+            # the profile of who is signed in now (A signed out inside the login's page, B signed in: the cookie is
+            # still A's) is as none: the sign-in page opens B's (the review of 2026-11-21, item 26).
             if rel == "index.html":
-                if web.profile_cookie(self) is None or front.signed_in(self) is False:
+                profile = web.profile_cookie(self)
+                if profile is None or front.signed_in(self) is False or front.profile_is_theirs(self, profile) is False:
                     rel = "login.html"
             web.static_file(self, rel)
 

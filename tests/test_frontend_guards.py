@@ -525,3 +525,16 @@ def test_profiles_have_a_login_page_and_keep_their_own_preferences():
     assert "state.picked = String(ticker).toUpperCase();" in _js("app.js").split("function openSymbol(", 1)[1].split("\n}\n", 1)[0]
     ask = _js("activity.js").split("async function askFirst(", 1)[1].split("\n  }\n", 1)[0]
     assert "const visit = state.picked === ticker;" in ask and "${visit ? '&visit=1' : ''}" in ask
+
+
+def test_buy_and_sell_place_one_order_at_a_time_each_attempt_named():
+    """The review of 2026-11-21, item 26: a double click on Buy placed two paper orders. The ticket's buttons are off
+    while an order is on its way, and each attempt carries its own clientId (the server answers a repeat with the
+    order it placed: test_paper.py)."""
+    place = _js("trading.js").split("async function place(side) {", 1)[1].split("\n  }\n", 1)[0]
+    assert place.lstrip().startswith("if (placing) return;")
+    assert "clientId: attemptId()" in place
+    sent = place.index("await apiWrite('POST', '/api/trading/orders', body)")
+    assert place.index("placing = true;") < sent and place.index("b.disabled = true;") < sent
+    done = place.split("} finally {", 1)[1]
+    assert "placing = false;" in done and "b.disabled = false;" in done

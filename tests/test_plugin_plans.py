@@ -613,3 +613,84 @@ def test_the_page_says_scanning_and_lists_a_plugins_feeds():
     assert "${feedsHtml(p)}${planHtml(p)}" in js and ": ''}${publishersHtml(p)}${databasesHtml(p)}${apisHtml(p, pubPartsOf(p))}`;" in js  # its headlines, where its data is, its API
     css = (static / "style.css").read_text(encoding="utf-8")
     assert ".ex-state.pl-scanning { color: var(--accent);" in css
+
+
+# -- two presses at once (the review of 2026-11-21, item 26: two Rescans at once started two scans) -------------------
+def _raced(app, monkeypatch, start):
+    """`start` called once, and again from another thread at the moment the first one starts its process: what each
+    answered and the processes started. The second either finishes (nothing held it) or waits at the app's start
+    lock; which of the two is seen before the first goes on, so the order is forced, not left to timing. Every
+    process is a stand-in (tests never start one)."""
+    import threading
+
+    from liminal_charts.gui import server
+
+    spawned, moved, out = [], threading.Event(), {}
+
+    class Gate:  # the app's start lock, saying when the second start comes to wait at it
+        def __init__(self, lock):
+            self.lock = lock
+
+        def __enter__(self):
+            if threading.current_thread() is other:
+                moved.set()
+            self.lock.acquire()
+
+        def __exit__(self, *exc):
+            self.lock.release()
+
+    def second():
+        try:
+            out["second"] = start()
+        except RuntimeError as e:
+            out["second"] = e
+        finally:
+            moved.set()
+
+    other = threading.Thread(target=second, daemon=True)
+
+    def spawn(args, **_kw):
+        spawned.append(args)
+        if len(spawned) == 1:
+            other.start()
+            assert moved.wait(10)
+        return _Proc()
+
+    app._start_lock = Gate(threading.Lock())
+    app._spawn = spawn
+    monkeypatch.setattr(server.subprocess, "Popen", spawn)  # the code before the fix started some by Popen itself
+    first = start()
+    other.join(10)
+    assert not other.is_alive()
+    return first, out["second"], spawned
+
+
+def test_two_rescans_at_once_start_one(tmp_path, monkeypatch):
+    store, app = _app(tmp_path)
+    try:
+        first, second, spawned = _raced(app, monkeypatch, lambda: app.start_rescan("alpaca"))
+        assert first["started"] and len(spawned) == 1
+        assert isinstance(second, RuntimeError) and "already running" in str(second)
+    finally:
+        store.close()
+
+
+def test_two_scans_at_once_start_one(tmp_path, monkeypatch):
+    store, app = _app(tmp_path)
+    try:
+        first, second, spawned = _raced(app, monkeypatch, lambda: app.start_scan())
+        assert first["started"] and len(spawned) == 1
+        assert isinstance(second, RuntimeError) and "in progress" in str(second)
+    finally:
+        store.close()
+
+
+def test_two_builds_of_derived_frames_at_once_start_one(tmp_path, monkeypatch):
+    store, app = _app(tmp_path)
+    store.watch("massive", ["SPCX"], "minute", exchange="XNAS")
+    try:
+        first, second, spawned = _raced(app, monkeypatch, lambda: app.start_derive("SPCX"))
+        assert first["started"] and len(spawned) == 1 and spawned[0][-3:] == ["derive", "--tickers", "SPCX"]
+        assert isinstance(second, RuntimeError) and "already running" in str(second)
+    finally:
+        store.close()

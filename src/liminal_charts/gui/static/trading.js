@@ -128,13 +128,23 @@
     if (b) place(b.dataset.side);
   });
 
+  // One order on its way at a time (the review of 2026-11-21, item 26: a double click on Buy placed two): until the
+  // answer comes, Buy and Sell are off and a second press places nothing, as the New-account form's Open. Each
+  // attempt carries a name of its own (clientId): a request sent again with it is answered with the order it placed.
+  let placing = false;
+  const attemptId = () => (window.crypto?.randomUUID ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
   async function place(side) {
+    if (placing) return;
     const msg = $('trMsg');
     if (!$('trTicket').reportValidity()) return;  // what a submit checks: a symbol, a quantity of 0 or more
     const sym = $('trSym').value.trim().toUpperCase();
     const body = { ticker: sym, source: sym === state.ticker ? state.source : '*', side,
                    qty: Number($('trQty').value), type: $('trType').value, limit: $('trLimit').value || null,
-                   stop: $('trStop').value || null, tif: $('trTif').value };
+                   stop: $('trStop').value || null, tif: $('trTif').value, clientId: attemptId() };
+    placing = true;
+    const buttons = [...$('trTicket').querySelectorAll('button[data-side]')];
+    buttons.forEach((b) => { b.disabled = true; });
     try {
       const o = await apiWrite('POST', '/api/trading/orders', body);
       msg.className = 'small up';
@@ -143,6 +153,9 @@
     } catch (err) {
       msg.className = 'small down';
       msg.textContent = err.message || String(err);
+    } finally {
+      placing = false;
+      buttons.forEach((b) => { b.disabled = false; });
     }
   }
 

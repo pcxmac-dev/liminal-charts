@@ -223,3 +223,40 @@ def test_the_trading_routes_trade_paper_only(server, monkeypatch):
     assert status == 400
     status, acct = _call(server, "POST", "/api/trading/reset", {"cash": 25_000})
     assert status == 200 and acct["cash"] == 25_000
+
+
+# -- an order sent twice (the review of 2026-11-21, item 26: a double click on Buy placed two) ------------------------
+def test_an_order_sent_again_under_its_client_id_is_placed_once(book):
+    first = book.place("SPCX", "*", "buy", 10, "market", now_ms=T0, client_id="attempt-1")
+    again = book.place("spcx", "*", "buy", 10, "market", now_ms=T0 + 1_000, client_id="attempt-1")
+    assert again["id"] == first["id"] and again["client_id"] == "attempt-1"
+    assert book.conn.execute("SELECT COUNT(*) FROM paper_orders").fetchone()[0] == 1
+    with pytest.raises(ValueError, match="another order"):
+        book.place("SPCX", "*", "sell", 10, "market", now_ms=T0, client_id="attempt-1")  # that name is taken
+    assert book.place("SPCX", "*", "buy", 10, "market", now_ms=T0, client_id="attempt-2")["id"] != first["id"]
+    for bad in ("", "x" * 65):
+        with pytest.raises(ValueError):
+            book.place("SPCX", "*", "buy", 10, "market", now_ms=T0, client_id=bad)
+    # without a name each press is an order, as before
+    assert book.place("SPCX", "*", "buy", 1, "market", now_ms=T0)["id"] != book.place("SPCX", "*", "buy", 1, "market", now_ms=T0)["id"]
+
+
+def test_a_file_made_before_client_ids_gets_the_column(tmp_path):
+    conn = sqlite3.connect(tmp_path / "old.db")
+    conn.executescript(paper.SCHEMA.replace("looked_to   INTEGER,", "looked_to   INTEGER").replace(
+        "    client_id   TEXT                -- the page's id for the attempt that placed it (a repeat returns this order)\n", ""))
+    assert "client_id" not in {r[1] for r in conn.execute("PRAGMA table_info(paper_orders)")}
+    tape = Tape()
+    b = PaperBook(conn, tape.after, tape.last, stored_to=tape.stored_to)
+    o = b.place("SPCX", "*", "buy", 1, "market", now_ms=T0, client_id="a")
+    assert b.place("SPCX", "*", "buy", 1, "market", now_ms=T0, client_id="a")["id"] == o["id"]
+
+
+def test_the_order_route_places_a_repeat_of_one_attempt_once(server, monkeypatch):
+    monkeypatch.setattr(paper, "_now", lambda: _ms("2026-10-14 10:00") + 30_000)
+    body = {"ticker": "SPCX", "side": "buy", "qty": 5, "type": "market", "clientId": "page-attempt-7"}
+    status, first = _call(server, "POST", "/api/trading/orders", body)
+    status2, again = _call(server, "POST", "/api/trading/orders", body)
+    assert status == status2 == 201 and again["id"] == first["id"]
+    assert [o["id"] for o in _call(server, "GET", "/api/trading")[1]["orders"]].count(first["id"]) == 1
+    assert len(_call(server, "GET", "/api/trading")[1]["orders"]) == 1
