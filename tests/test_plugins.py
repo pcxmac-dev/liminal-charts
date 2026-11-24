@@ -28,13 +28,13 @@ PACKAGED = {  # name: (its distribution's version, the contract it needs, its en
     # the API its attached to, and present links that provide documentation")
     "bitstamp": ("0.3.0", "2.2", "plugin_integrator_bitstamp:PLUGIN"), "coinbase": ("0.3.0", "2.2", "plugin_integrator_coinbase:PLUGIN"),
     "bitfinex": ("0.3.0", "2.2", "plugin_integrator_bitfinex:PLUGIN"),
-    "cboe": ("0.3.0", "2.2", "plugin_integrator_cboe"), "cboefutures": ("0.3.0", "2.2", "plugin_integrator_cboe"),
+    "cboe": ("0.3.1", "2.2", "plugin_integrator_cboe"), "cboefutures": ("0.3.1", "2.2", "plugin_integrator_cboe"),
     "tiingo": ("0.3.0", "2.2", "plugin_integrator_tiingo"), "tiingofx": ("0.3.0", "2.2", "plugin_integrator_tiingo"),
     "alpaca": ("0.3.0", "2.2", "plugin_integrator_alpaca"), "boats": ("0.3.0", "2.2", "plugin_integrator_alpaca"),
     "massive": ("0.3.0", "2.2", "plugin_integrator_massive"), "twse": ("0.3.0", "2.2", "plugin_integrator_twse"),
     "b3": ("0.3.0", "2.2", "plugin_integrator_b3"),
-    "alphavantage": ("0.3.0", "2.2", "plugin_integrator_alphavantage"), "jquants": ("0.3.0", "2.2", "plugin_integrator_jquants"),
-    "twelvedata": ("0.3.0", "2.2", "plugin_integrator_twelvedata")}
+    "alphavantage": ("0.3.1", "2.2", "plugin_integrator_alphavantage"), "jquants": ("0.3.0", "2.2", "plugin_integrator_jquants"),
+    "twelvedata": ("0.3.1", "2.2", "plugin_integrator_twelvedata")}  # 0.3.1: item 26's fixes (2026-11-24)
 TIINGO_BOATS = "tiingoboats"  # Tiingo's Blue Ocean feed, live: its package's
 IEX_FEED = "iex"  # Alpaca's IEX stream, live: its package's
 FEEDS = ["massive", "alpaca", "boats", "bitstamp", "coinbase", "bitfinex", "cboe", "cboefutures", "tiingo", "tiingofx",
