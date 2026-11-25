@@ -224,7 +224,7 @@ def test_the_recorder_ends_other_recorders_but_not_itself_or_its_launcher(monkey
     assert sorted(live.recorders()) == [700, 701]
     ended, logged = [], []
     assert live.reap_strays(logged.append, terminate=lambda pid: ended.append(pid) or True) == 2
-    assert sorted(ended) == [700, 701] and "ended 2 other recorder processes" in logged[0]
+    assert sorted(ended) == [700, 701] and ("ended 2 other recorder processes" in logged[0] or "asked 2" in logged[0])  # 1.88.4: asked, never forced
 
 
 def test_tests_cannot_see_or_end_this_machines_processes():

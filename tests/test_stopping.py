@@ -118,7 +118,7 @@ def test_sync_hears_its_own_stop_event_else_the_charts_one_and_sigterm(monkeypat
     # none named: the charts app's own
     k32 = K32()
     stop = cli.listen_for_stop(env={}, k32=k32, every=0.01)
-    assert k32.opened == ["Local\\liminal-stop-charts"]
+    assert k32.opened == [lifecycle.stop_event_name("charts")]  # the test's own while it runs (liminal-libs 1.88.2)
     signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)  # its handler, as the system would call it
     assert stop.is_set()
 
@@ -130,13 +130,13 @@ def test_a_host_answers_its_apps_stop_event_once_its_handler_is_in_place(monkeyp
     monkeypatch.setattr(cli, "STOP_LOOK_S", 0.01)
     cli._host_answers_its_stop_event("feed-massive", "integrator", lines.append, k32=k32, every=0.01,
                                      raise_signal=raised.append, getsignal=lambda s: handler["now"])
-    assert k32.opened == ["Local\\liminal-stop-integrator"]
+    assert k32.opened == [lifecycle.stop_event_name("integrator")]
     k32.set = True
     time.sleep(0.1)
     assert raised == []  # SIGTERM's default would end the process outright: not raised yet
     handler["now"] = lambda signum, frame: None  # Host.serve's
     assert _until(lambda: raised == [signal.SIGTERM])
-    assert lines == ["host feed-massive: asked to stop (Local\\liminal-stop-integrator): it ends, its data secured"]
+    assert lines == [f"host feed-massive: asked to stop ({lifecycle.stop_event_name('integrator')}): it ends, its data secured"]
     assert cli.HOST_APPS == {"fetcher": "integrator", "history": "integrator", "live": "charts"}
 
 
