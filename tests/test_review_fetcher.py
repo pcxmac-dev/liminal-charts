@@ -224,6 +224,13 @@ def test_the_fetch_check_reads_a_chunk_at_a_time_and_only_where_the_finer_frame_
 
 # -- the audit queue (finding 17) -----------------------------------------------------------------------
 
+def _widens() -> bool:
+    """Whether the library widens a queued span (liminal-libs 1.81.0) rather than replacing it with the newest."""
+    import liminal_libs
+
+    return tuple(int(x) for x in liminal_libs.__version__.split(".")[:2]) >= (1, 81)
+
+
 def test_the_audit_queue_keeps_one_entry_per_series_and_expires_old_ones_at_once(store):
     from liminal_libs import audit
     from liminal_libs.coverage import FeedProfile
@@ -233,7 +240,9 @@ def test_the_audit_queue_keeps_one_entry_per_series_and_expires_old_ones_at_once
     store.queue_audit("AAA", "day", 0, 10, "fake")
     store.queue_audit("AAA", "minute", 0, 10, "other")
     assert store.audit_queue_count() == 3
-    assert [q["start_ms"] for q in store.audit_queue() if (q["timespan"], q["owner"]) == ("minute", "fake")] == [29_000]
+    # one entry, widened over every span queued while it waited (liminal-libs 1.81.0: it was replaced by the newest)
+    assert [(q["start_ms"], q["end_ms"]) for q in store.audit_queue()
+            if (q["timespan"], q["owner"]) == ("minute", "fake")] == [(0, 29_500) if _widens() else (29_000, 29_500)]
     assert {q["owner"] for q in store.audit_queue(exclude_owner="fake")} == {"other"}
     with store.conn:
         store.conn.execute("UPDATE audit_queue SET queued_at='2020-01-01T00:00:00+00:00' WHERE owner='other'")

@@ -244,6 +244,10 @@ class FakeNews:
         return [{"id": "n1", "published_ms": 1_761_000_000_000, "title": "Headline", "publisher": "Wire",
                  "url": "https://x/1", "tickers": ["AAPL"]}]
 
+    def news_pages(self, since=None, until=None, limit=100):
+        """Massive's reader since its 0.3.1 (the review of 2026-11-21, item 26) follows the pages: one, here."""
+        yield self.news(since, limit), False
+
 
 @pytest.fixture
 def massive_news(monkeypatch):
