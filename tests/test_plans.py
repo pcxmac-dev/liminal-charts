@@ -40,7 +40,7 @@ def test_each_request_is_counted_against_its_asset_classs_rate():
         def __init__(self, name):
             self.name = name
 
-        def acquire(self):
+        def acquire(self, stop=None):  # the client's should_stop (liminal-libs 1.87.0)
             used.append(self.name)
 
     src.client._limiter, src.client.class_limiters = Counted("stock"), {"crypto": Counted("crypto")}

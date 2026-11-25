@@ -1060,7 +1060,10 @@ def cmd_host(args, settings: Settings) -> int:
             log(f"host mongo: {e}; not run")
             return 0
         h = host.Host(mongo.KEEPER, settings.db_path, log=log)
-        h.serve(lambda stop: mongo.keep(data, stop, log), secure=lambda: mongo.stop() and log("host mongo: server shut down"))
+        # the server shut down once, by the host's secure (after the work, and when the work failed too): liminal-libs
+        # 1.87.0's keep shuts it down itself as it ends (its ender), which here would be a second stop
+        h.serve(lambda stop: mongo.keep(data, stop, log, ender=lambda: None),
+                secure=lambda: mongo.stop() and log("host mongo: server shut down"))
         return 0
     if args.name.startswith("feed-"):  # a feed's run: its pass, stopped at its next request once let go
         feed = args.name[len("feed-"):]

@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 import liminal_charts
-from liminal_libs import datasets, proc, provenance
+from liminal_libs import datasets, proc, proctree, provenance
 
 # the library's package (liminal-libs), the app's own, and the integrator's when it is installed
 ROOTS = [Path(proc.__file__).parent, Path(liminal_charts.__file__).parent]
@@ -32,10 +32,23 @@ def test_every_git_call_opens_no_window(monkeypatch, tmp_path):
     class Done:
         returncode, stdout, stderr = 0, b"ok", b""
 
-    def run(args, **kw):
-        calls.append(kw)
-        return Done()
-    monkeypatch.setattr(datasets.subprocess, "run", run)
+    class Started:
+        """proctree.run's Popen: the datasets' git runs through proctree since liminal-libs 1.87.0 (its tree ended at
+        its timeout), so a stand-in for subprocess.run alone let a real git start here."""
+        returncode = 0
+
+        def __init__(self, args, **kw):
+            calls.append(kw)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def communicate(self, input=None, timeout=None):
+            return b"ok", b""
+    monkeypatch.setattr(proctree.subprocess, "Popen", Started)
     assert datasets._git(tmp_path, "status", binary=True) == b"ok"
     assert calls[-1].get("creationflags", 0) == (0x08000000 if os.name == "nt" else 0)
 

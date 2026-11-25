@@ -62,8 +62,10 @@ def until(cond, within=5.0) -> bool:
     return cond()
 
 
-def test_a_host_ends_once_its_last_client_has_been_gone_for_the_idle_time(db):
-    served = Served("t", db, idle=0.3, start=5)
+def test_a_host_ends_at_once_when_its_last_client_lets_it_go(db):
+    # liminal-libs 1.87.0 (the shutdown audit of 2026-11-24): a last client that says "detach" ends its host at once,
+    # not after the idle time (60 s a host, one host after another at a stop); the idle time is the next test's
+    served = Served("t", db, idle=30, start=5)
     a = attach("t", db, log=print)
     assert a is not None and a.host_pid == os.getpid() and a.alive()
     assert until(lambda: served.host.clients() == [os.getpid()])
@@ -72,15 +74,35 @@ def test_a_host_ends_once_its_last_client_has_been_gone_for_the_idle_time(db):
     assert until(lambda: served.host.clients() == [])
     assert served.ended() and served.host.stop.is_set()
     assert served.order == ["work ended", "secured"]  # the data secured after the work, before the exit
-    assert "no client attached for 0.3 s" in served.host.reason
+    assert served.host.reason == "its last client let it go"
     assert not a.alive()
+
+
+def gone_without_a_word(a: Attachment) -> None:
+    """The client's end of the pipe closed with no "detach" said: its process killed or crashed."""
+    a._conn.close()
+    a.detached = True
+
+
+def test_a_host_ends_once_its_last_client_has_been_gone_for_the_idle_time(db):
+    # a client gone without a word is waited for (a restart's own client may come back): the idle time, at most
+    # GONE_SECONDS (liminal-libs 1.87.0)
+    served = Served("t", db, idle=0.3, start=5)
+    a = attach("t", db, log=print)
+    assert until(lambda: served.host.clients() == [os.getpid()])
+    gone_without_a_word(a)
+    assert until(lambda: served.host.clients() == [])
+    assert served.ended() and served.host.stop.is_set()
+    assert served.order == ["work ended", "secured"]
+    assert "no client attached for 0.3 s" in served.host.reason
 
 
 def test_a_client_attaching_again_keeps_the_host_up(db):
     served = Served("t", db, idle=0.4, start=5)
-    with attach("t", db) as a:
-        assert until(lambda: served.host.clients() == [os.getpid()])
-    assert a.detached and until(lambda: served.host.clients() == [])
+    a = attach("t", db)
+    assert until(lambda: served.host.clients() == [os.getpid()])
+    gone_without_a_word(a)  # 1.87.0: a "detach" would end it at once; a client gone without one is waited for
+    assert until(lambda: served.host.clients() == [])
     time.sleep(0.15)
     with attach("t", db) as b:  # before the idle time ran out
         assert until(lambda: served.host.clients() == [os.getpid()])

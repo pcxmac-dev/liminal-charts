@@ -71,10 +71,11 @@ def test_an_answer_that_is_not_json_is_that_requests_error():
 def test_no_request_goes_out_after_a_pause_that_came_during_the_limiters_wait():
     session = FakeSession([FakeResponse(body={"results": []})])
     client = MassiveClient("k", session=session)
-    paused = [None]
+    paused, given = [None], []
 
     class Waits:
-        def acquire(self):
+        def acquire(self, stop=None):  # liminal-libs 1.87.0: the client's should_stop, heard during the wait
+            given.append(stop)
             paused[0] = "fetching paused by you until 20:00 UTC"  # the user pressed pause meanwhile
 
     client._limiter = Waits()
@@ -82,6 +83,7 @@ def test_no_request_goes_out_after_a_pause_that_came_during_the_limiters_wait():
     with pytest.raises(Paused):
         client.get("/v2/aggs/ticker/AAPL/range/1/minute/2026-10-01/2026-10-02")
     assert session.calls == [] and client.requests_made == 0
+    assert given == [client.should_stop]  # the wait itself is told of a stop, not only the moment after it
 
 
 def test_too_many_pages_is_a_source_error_not_a_type_error():

@@ -108,7 +108,8 @@ def test_the_keeper_ends_when_the_server_is_gone_and_runs_nothing_it_cannot_star
     events: list[str] = []
     monkeypatch.setattr(cli, "Logger", lambda path: events.append)
     monkeypatch.setattr(mongo, "binary", lambda: tmp_path / "mongod.exe")
-    monkeypatch.setattr(mongo, "KEEP_SECONDS", 0.05)
+    monkeypatch.setattr(mongo, "KEEP_SECONDS", 0.05)  # heard when keep runs (liminal-libs 1.88.1)
+    monkeypatch.setattr(mongo, "GONE_GRACE_S", 0.1)  # 1.87.0: gone after 3 failed pings over this, not one
     monkeypatch.setattr(mongo, "start", lambda data_dir, wait_s=20.0: None)  # one was running already: adopted
     monkeypatch.setattr(mongo, "running", lambda timeout_ms=500: False)  # ... and then it went (mongo stop)
     monkeypatch.setattr(mongo, "stop", lambda: events.append("stop asked") or False)
@@ -125,7 +126,7 @@ def test_the_keeper_ends_when_the_server_is_gone_and_runs_nothing_it_cannot_star
     monkeypatch.setattr(hosting, "Host", FakeHost)
     assert cli.cmd_host(SimpleNamespace(name="mongo"), settings) == 0
     assert [e for e in events if not e.startswith("host mongo:")] == ["stop asked"]
-    assert any("the server is gone" in e for e in events)
+    assert any("the server has not answered 3 pings" in e and "the keeper ends" in e for e in events)
     # not installed: said, and nothing served
     monkeypatch.setattr(mongo, "binary", lambda: None)
     served: list = []
