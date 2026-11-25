@@ -23,6 +23,8 @@
                hour, last write, its tables' rows; the one picked, its specifics beside it (databases.js)
      Resources the app's processes (CPU, memory, disk, connections), the machine's bandwidth, the
                disks and the data files (resources.js)
+     Codebase  the repositories the app is made of, how far each is behind its remote, each language's share of
+               the code (the library's codebase.js, held by codeview.js; Monday list item 15)
 
    Clicking Stock or Analysis again while it is showing hides or shows its side panel. A right click on a view's
    icon, or a long press of a finger (the library's menu.js and touch.js, on every device), offers to disable it:
@@ -34,7 +36,7 @@
   // The watchlist and the preferences sit beside whichever chart was showing (no chart content of their own).
   const VIEWS = { stock: 'chart', analysis: 'chart', trading: 'chart', watchlist: 'chart', prefs: 'chart', markets: 'markets',
                   news: 'news', gov: 'gov', datasets: 'datasets', fetcher: 'fetcher', live: 'live', resources: 'resources',
-                  exchanges: 'exchanges', plugins: 'plugins', databases: 'databases' };
+                  exchanges: 'exchanges', plugins: 'plugins', databases: 'databases', codebase: 'codebase' };
   const BESIDE = new Set(['watchlist', 'prefs']);
 
   // -- the views turned off ------------------------------------------------------------------
@@ -48,7 +50,8 @@
     ['watchlist', 'Watchlist', 'watchlist'], ['prefs', 'Preferences', 'sliders'], ['exchanges', 'Exchanges', 'scales'],
     ['markets', 'Markets', 'globe'], ['news', 'News', 'thermometer'], ['gov', 'Federal', 'statehouse'],
     ['datasets', 'Datasets', 'scroll'], ['fetcher', 'Fetcher', 'disk'], ['live', 'Live', 'record'],
-    ['plugins', 'Plugins', 'plug'], ['databases', 'Databases', 'database'], ['resources', 'Resources', 'chip']];
+    ['plugins', 'Plugins', 'plug'], ['databases', 'Databases', 'database'], ['resources', 'Resources', 'chip'],
+    ['codebase', 'Codebase', 'branch']];
   const FIXED = new Set(['stock', 'prefs']);
   const viewsOff = new Set(window.FETCHER_MODE ? [] : [].concat(prefs.get('viewsOff', []) || [])
     .filter((v) => typeof v === 'string' && v in VIEWS && !FIXED.has(v)));
@@ -332,6 +335,7 @@
     $('railExchanges').innerHTML = icon('scales', RAIL_ICON);
     $('railPlugins').innerHTML = icon('plug', RAIL_ICON);
     $('railDatabases').innerHTML = icon('database', RAIL_ICON);
+    $('railCodebase').innerHTML = icon('branch', RAIL_ICON);  // a repository's branch, as on the platform's list
     $('railPrefs').innerHTML = icon('sliders', RAIL_ICON);
     const running = !!activity?.running;
     const fresh = activity?.newData || 0;

@@ -213,6 +213,11 @@
     <div class="view ex-view pl-view" id="viewPlugins" data-view="plugins" hidden></div>
     <!-- the integrator's databases: what there is | the one picked | its specifics (databases.js) -->
     <div class="view ex-view db-view" id="viewDatabases" data-view="databases" hidden></div>
+    <!-- the app's code base: its data | its specifics (the library's codebase.js, held by codeview.js) -->
+    <div class="view cb-view" id="viewCodebase" data-view="codebase" hidden>
+      <div id="codebaseData" aria-label="The code base: its shares, its repositories, every language"></div>
+      <aside id="codebaseSide" aria-label="The code base's specifics: the whole, or the repository picked"></aside>
+    </div>
 
     <div class="view ds-view" id="viewDatasets" data-view="datasets" hidden></div>
 
@@ -239,6 +244,7 @@
       <button data-pane="plugins" id="railPlugins" title="Plugins: every data provider (feed or source), its plan, limits and capabilities; rescan what each key gets"></button>
       <button data-pane="databases" id="railDatabases" title="Databases: every database the integrator keeps (SQLite, DuckDB, MongoDB): its size on disk, growth an hour, last write and its tables' rows"></button>
       <button data-pane="resources" id="railResources" title="Resources: the app's processes (CPU, memory, disk, connections), the machine's bandwidth, and the data files"></button>
+      <button data-pane="codebase" id="railCodebase" title="Codebase: the repositories this app is made of, how far each is behind its remote, and each language's share of the code"></button>
       <hr>
       <button type="button" id="railProfile" class="rail-profile" title="Profile: switch to another">?</button>
     </nav>
@@ -287,6 +293,8 @@
   <script src="gov.js"></script>
   <script src="resources.js"></script>
   <script src="databases.js"></script>
+  <script src="codebase.js"></script><!-- the library's Codebase drawing (liminal-libs 1.59.0): the platform's too -->
+  <script src="codeview.js"></script>
   <script src="venues.js"></script>
   <script src="plugins.js"></script>
   <script src="datasets.js"></script>

@@ -124,7 +124,8 @@ def test_an_option_of_the_auditors_is_saved_like_a_plan(auditor, monkeypatch):
 
 def test_the_data_api_hands_the_auditors_asks_to_its_frame():
     src = (Path(server_mod.__file__)).read_text(encoding="utf-8")
-    assert 'if parts[:3] in (["", "api", "databases"], ["", "api", "auditor"]):' in src
+    # (with every app's Codebase beside them since 0.2.4: its remotes asked, Monday list item 15)
+    assert 'if parts[:3] in (["", "api", "databases"], ["", "api", "auditor"], ["", "api", "codebase"]):' in src
     assert "return self._frame_write(method, urlparse(self.path).path, body)" in src
     assert 'p = providers().get(plugin) or assistants().get(plugin) or auditors().get(plugin)' in src
 

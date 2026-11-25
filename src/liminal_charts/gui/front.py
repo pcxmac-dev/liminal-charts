@@ -87,6 +87,17 @@ def _is_platform(path: str) -> bool:
     return path == PLATFORM_PREFIX or path.startswith(PLATFORM_PREFIX + "/")
 
 
+# The charts app's own code base (Monday list item 15: "Codebase in the login's, the integrator's and the charts'
+# pages"; the user, 2026-11-16: "this class will be added to all the 'apps' just like connections"): the library's
+# Codebase every App holds, answered here by the charts app this front holds (GET /api/codebase, POST
+# /api/codebase/fetch), never passed on: the integrator would answer with its own code base, not the charts'
+CODEBASE_PREFIX = "/api/codebase"
+
+
+def _is_codebase(path: str) -> bool:
+    return path == CODEBASE_PREFIX or path.startswith(CODEBASE_PREFIX + "/")
+
+
 class Front:
     """The front's way to the integrator it links (at its port; never started from here) and to the login
     it holds (an object of the login class, the charts app its superclass)."""
@@ -266,6 +277,8 @@ def make_front_handler(front: Front):
                 if self._from_this_app():
                     self._json({"pairs": front.login_pairs()})
                 return
+            if _is_codebase(path):  # the charts app's own, answered by the app held here (its own checks)
+                return serve_object(self, front.charts, "GET", self.path)
             if path.startswith("/api/"):
                 if self._from_this_app():
                     self._proxy("GET")
@@ -290,6 +303,8 @@ def make_front_handler(front: Front):
                 return self._ui(method)
             if _is_login(urlsplit(self.path).path):
                 return self._login(method)
+            if _is_codebase(urlsplit(self.path).path):  # its remotes asked, on the user's click: the charts app's own
+                return serve_object(self, front.charts, method, self.path)
             if _is_platform(urlsplit(self.path).path) and platform_url() is not None:
                 return self._linked(method)
             self._proxy(method)

@@ -84,6 +84,9 @@ svg.spark { touch-action: pan-y; }
   .ex-view > div, .ex-view > aside { overflow: visible; min-height: 0; }
   .ex-venues { border-right: none; border-bottom: 1px solid var(--border); }
   .ex-side { border-left: none; border-top: 1px solid var(--border); }
+  /* Codebase (codeview.js): its data, then its specifics, scrolled as one */
+  main > .view.cb-view:not([hidden]) { display: block; overflow-y: auto; }
+  .cb-view > div, .cb-view > aside { overflow: visible; min-height: 0; }
   .pl-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ex-tools { flex-wrap: wrap; }
   .ex-tools input { flex: 1 1 100%; min-width: 0; }

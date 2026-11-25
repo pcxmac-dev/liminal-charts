@@ -2298,8 +2298,9 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                     if method == "POST" and parts[3:] == ["reset"]:
                         return self._json(app.trade_reset(body))
                     return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-                # its frame's own writes (the integrator's: the database plugins' instances, the auditors' asks)
-                if parts[:3] in (["", "api", "databases"], ["", "api", "auditor"]):
+                # its frame's own writes (the integrator's: the database plugins' instances, the auditors' asks; and every
+                # app's Codebase, its remotes asked on the user's click: POST /api/codebase/fetch, Monday list item 15)
+                if parts[:3] in (["", "api", "databases"], ["", "api", "auditor"], ["", "api", "codebase"]):
                     return self._frame_write(method, urlparse(self.path).path, body)
                 if parts[:3] != ["", "api", "layouts"]:
                     return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
