@@ -1343,3 +1343,13 @@ html.keyboard dialog.switcher[open] #symbolList { flex: 1; min-height: 0; max-he
 body.login-page { height: auto; }
 html.keyboard body.login-page { height: auto; min-height: var(--vvh, 100%); }
 @media (max-width: 700px), (max-height: 640px) { .login-app iframe { min-height: 420px; } }
+
+/* The Trading Desk (desk.js; Monday list item 37): the ex-view's three columns, its tables kept to their column */
+.dk-view .tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.dk-view .tile .big { font-size: 16px; overflow-wrap: anywhere; }
+.dk-view .ex-list table { width: 100%; }
+.dk-view .ex-list td, .dk-view .ex-list th { overflow-wrap: anywhere; }
+.dk-view tr[data-rule] { cursor: pointer; }
+.dk-view tr.active td { background: var(--panel); }
+.dk-view .warn { color: var(--warn, #d9a441); }
+.dk-view .tr-ticket label { display: grid; gap: 2px; }

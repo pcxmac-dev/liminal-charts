@@ -1139,6 +1139,34 @@ are matched whenever the Trading view asks (and so after the fact, from the stor
 closed: fills are what the bars allowed, whenever they are looked at). Positions are kept at their
 average cost; realized profit and loss when a position is reduced, unrealized at the last stored price.
 
+### The Trading Desk (0.2.7, 2026-11-25; Monday list item 37, the user's Trading_Desk.docx)
+
+A decision-support layer over the account, read-only and paper first (`trading/desk.py`; its own `desk_*` tables
+beside the paper account's, an additive schema). One analysis, three ways in: the rail's **Desk** view
+(`static/desk.js`: accounts and decision records | the evaluation | the tool on top, the constraint picked beneath),
+the client API under `/v1/` (`gui/desk.py`, under the charts' local-only, this-app and write-header rules; the front
+passes `/v1/` reads to the integrator as it does `/api/`), and the market and account interfaces (the stored bars for
+quotes and closes; a broker's account only as `BrokerSnapshot`, an interface with no implementation).
+
+- **Evaluations** are saved whole: the assumptions (labelled as the user's), the quote and account as read, every rule
+  version and exception in force, the policy version, the evidence, the gaps; read back by id as they were evaluated.
+  Saving or evaluating never submits an order.
+- **Constraints** carry an id, owner, scope, unit, threshold, effective dates, version, severity (info, review, block)
+  and response. Each is checked in its own unit (`MEASURES`: a rule in another unit is refused) against holdings,
+  working buys, reservations and the proposal; the largest feasible quantity is the least of the blocking rules'
+  feasible quantities (whole shares), the binding rule named, each failing rule with what would bring it in bounds.
+- **Reviews** route a change or an exception to the rule's owner: the owner, or the role a rule is delegated to inside
+  its parent's limit, changes it at once (a new version); anything beyond the parent goes to the parent's owner; a
+  broker's limit is never changed here. Exceptions have a scope, an approver and an expiry; undecided reviews expire.
+- **Previews** expire (120 s) and are invalidated by any change to what they checked (a reservation, an order, a rule).
+- **Orders** (`POST /v1/orders`) go to the paper account only: any other account answers 403 "real orders are off"
+  (the user's rule). Each needs `authorized: true`, a current valid preview whose facts still hold, and an idempotency
+  key (a retry returns the first answer; the paper order's client id carries it across restarts).
+- **Unknown stays unknown**: a quote older than 15 minutes is shown stale with its value unknown; a market order then
+  has no executable size; margin asks for the broker's terms, none connected, so the size is indeterminate.
+- **Events** (`GET /v1/events`): every change in order, read from a cursor.
+- The document's return calculations: annualized, real at an assumed inflation, short trades in dollars and percent.
+
 ## State (2026-10-24)
 
 Already separated: data sources behind one interface (`sources/`), coverage planning

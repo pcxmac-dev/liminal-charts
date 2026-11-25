@@ -2293,6 +2293,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                         return self._json(app.start_scan(ticker), HTTPStatus.ACCEPTED)
                     except RuntimeError as e:
                         return self._json({"error": str(e)}, HTTPStatus.CONFLICT)
+                if parts[:2] == ["", "v1"]:  # the Trading Desk's client API (gui/desk.py; Monday list item 37)
+                    from . import desk; return desk.serve(self, app, method, self.path, body)  # noqa: E702
                 if parts[:3] == ["", "api", "trading"]:  # paper only: live trading is off
                     if method == "POST" and parts[3:] == ["orders"]:
                         return self._json(app.trade_place(body), HTTPStatus.CREATED)
@@ -2355,6 +2357,8 @@ def make_handler(app: ChartApp, port_ref: list[int]):
             if not self._local():
                 return
             url = urlparse(self.path)
+            if url.path.startswith("/v1/"):  # the Trading Desk's client API (gui/desk.py: its own checks; item 37)
+                from . import desk; return desk.serve(self, app, "GET", self.path)  # noqa: E702
             if url.path.startswith("/api/") and not self._from_this_app():
                 return
             q = {k: v[-1] for k, v in parse_qs(url.query).items()}

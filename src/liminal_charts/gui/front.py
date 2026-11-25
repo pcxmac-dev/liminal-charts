@@ -281,7 +281,7 @@ def make_front_handler(front: Front):
                 return
             if _is_codebase(path):  # the charts app's own, answered by the app held here (its own checks)
                 return serve_object(self, front.charts, "GET", self.path)
-            if path.startswith("/api/"):
+            if path.startswith(("/api/", "/v1/")):  # /v1/: the Trading Desk's client API (Monday list item 37)
                 if self._from_this_app():
                     self._proxy("GET")
                 return

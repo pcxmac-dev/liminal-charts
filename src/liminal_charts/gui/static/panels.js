@@ -5,6 +5,8 @@
      Analysis  the same symbol's chart with content of its own (interval, chart type, model,
                indicators and their panes, zoom, drawings), the highlight's measurements and the
                bar under the cursor beside it; schemes and replay (schemes.js, replay.js)
+     Desk      the Trading Desk: evaluations over the account, every constraint in its own unit with its owner,
+               previews and paper orders (desk.js, the /v1 API; Monday list item 37); real orders are off
      Trading   the same symbol's chart with content of its own, the paper account and the brokers beside it
                (trading.js); live trading is off
      Exchanges every tracked exchange (NYSE, Nasdaq, CME Group's four, indices, crypto, forex, Blue
@@ -34,7 +36,7 @@
 (() => {
   const { symbolIcon, icon, esc } = window.LiminalIcons;
   // The watchlist and the preferences sit beside whichever chart was showing (no chart content of their own).
-  const VIEWS = { stock: 'chart', analysis: 'chart', trading: 'chart', watchlist: 'chart', prefs: 'chart', markets: 'markets',
+  const VIEWS = { stock: 'chart', analysis: 'chart', trading: 'chart', desk: 'desk', watchlist: 'chart', prefs: 'chart', markets: 'markets',
                   news: 'news', gov: 'gov', datasets: 'datasets', fetcher: 'fetcher', live: 'live', resources: 'resources',
                   exchanges: 'exchanges', plugins: 'plugins', databases: 'databases', codebase: 'codebase' };
   const BESIDE = new Set(['watchlist', 'prefs']);
@@ -46,7 +48,7 @@
   // enables it again. Kept per profile. Stock (the app's own icon, the symbol's, at the top) and Preferences (where the
   // switches are) cannot be turned off; the fetcher's own page (nobody's, no Preferences) shows every view it has.
   const RAIL_VIEWS = [  // as on the rail: the view, its name, its icon (icons.js; Stock's is the symbol's own)
-    ['stock', 'Stock', 'analysis'], ['analysis', 'Analysis', 'integral'], ['trading', 'Trading', 'trading'],
+    ['stock', 'Stock', 'analysis'], ['analysis', 'Analysis', 'integral'], ['desk', 'Desk', 'gauge'], ['trading', 'Trading', 'trading'],
     ['watchlist', 'Watchlist', 'watchlist'], ['prefs', 'Preferences', 'sliders'], ['exchanges', 'Exchanges', 'scales'],
     ['markets', 'Markets', 'globe'], ['news', 'News', 'thermometer'], ['gov', 'Federal', 'statehouse'],
     ['datasets', 'Datasets', 'scroll'], ['fetcher', 'Fetcher', 'disk'], ['live', 'Live', 'record'],
@@ -326,6 +328,7 @@
     window.Throbber.face($('railStock'), stockIcon, RAIL_ICON + 4);
     $('railAnalysis').innerHTML = icon('integral', RAIL_ICON);
     $('railWatch').innerHTML = icon('watchlist', RAIL_ICON);
+    $('railDesk').innerHTML = icon('gauge', RAIL_ICON);
     $('railTrading').innerHTML = icon('trading', RAIL_ICON);
     if (!window.GlobeIcon?.update()) $('railMarkets').innerHTML = icon('globe', RAIL_ICON);  // the Earth, once its images are here
     $('railNews').innerHTML = icon('thermometer', RAIL_ICON);

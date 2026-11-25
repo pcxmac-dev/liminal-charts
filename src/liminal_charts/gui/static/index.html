@@ -220,6 +220,8 @@
     </div>
 
     <div class="view ds-view" id="viewDatasets" data-view="datasets" hidden></div>
+    <!-- the Trading Desk: accounts and decision records | the evaluation | the tool and the pick (desk.js; item 37) -->
+    <div class="view ex-view dk-view" id="viewDesk" data-view="desk" hidden></div>
 
     <!-- A bound app's page (the login app's), shown whole when one of its icons is picked (panels.js) -->
     <div class="view bound-view" id="viewBound" data-view="bound" hidden>
@@ -229,6 +231,7 @@
     <nav id="rail" aria-label="Views">
       <button data-pane="stock" id="railStock" title="Stock: chart with the symbol, key statistics and business"></button>
       <button data-pane="analysis" id="railAnalysis" title="Analysis: chart with the highlight and cursor statistics"></button>
+      <button data-pane="desk" id="railDesk" title="Desk: the Trading Desk, evaluations against the account's constraints, paper orders only (real orders are off)"></button>
       <button data-pane="trading" id="railTrading" title="Trading: chart with the paper account beside it (simulated; Interactive Brokers planned; live trading is off)"></button>
       <button data-pane="watchlist" id="railWatch" title="Watchlist: every collected symbol and your own lists, beside the chart"></button>
       <button data-pane="prefs" id="railPrefs" title="Preferences: the sessions shown, the time zone, the theme, each session's shading on the chart, and the views on this rail"></button>
@@ -302,6 +305,7 @@
   <script src="schemes.js"></script>
   <script src="replay.js"></script>
   <script src="trading.js"></script>
+  <script src="desk.js"></script>
   <script src="drawclip.js"></script>
   <script src="watchlist.js"></script>
   <script src="prefs.js"></script>
