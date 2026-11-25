@@ -30,9 +30,9 @@ PACKAGED = {  # name: (its distribution's version, the contract it needs, its en
     "bitfinex": ("0.3.0", "2.2", "plugin_integrator_bitfinex:PLUGIN"),
     "cboe": ("0.3.1", "2.2", "plugin_integrator_cboe"), "cboefutures": ("0.3.1", "2.2", "plugin_integrator_cboe"),
     "tiingo": ("0.3.0", "2.2", "plugin_integrator_tiingo"), "tiingofx": ("0.3.0", "2.2", "plugin_integrator_tiingo"),
-    "alpaca": ("0.3.0", "2.2", "plugin_integrator_alpaca"), "boats": ("0.3.0", "2.2", "plugin_integrator_alpaca"),
-    "massive": ("0.3.0", "2.2", "plugin_integrator_massive"), "twse": ("0.3.0", "2.2", "plugin_integrator_twse"),
-    "b3": ("0.3.0", "2.2", "plugin_integrator_b3"),
+    "alpaca": ("0.3.1", "2.2", "plugin_integrator_alpaca"), "boats": ("0.3.1", "2.2", "plugin_integrator_alpaca"),
+    "massive": ("0.3.1", "2.2", "plugin_integrator_massive"), "twse": ("0.3.0", "2.2", "plugin_integrator_twse"),
+    "b3": ("0.3.1", "2.2", "plugin_integrator_b3"),  # 0.3.1: item 26's P3s
     "alphavantage": ("0.3.1", "2.2", "plugin_integrator_alphavantage"), "jquants": ("0.3.0", "2.2", "plugin_integrator_jquants"),
     "twelvedata": ("0.3.1", "2.2", "plugin_integrator_twelvedata")}  # 0.3.1: item 26's fixes (2026-11-24)
 TIINGO_BOATS = "tiingoboats"  # Tiingo's Blue Ocean feed, live: its package's
@@ -230,7 +230,7 @@ def test_every_plugin_is_versioned_for_this_apps_contract():
     # too; Federal declares the SEC's GOV_CONTACT and the CFTC's dataset (1.4), as the dataset
     # libraries their datasets; Federal's feeds their parsers (1.7); Massive's headlines are released
     # with Massive, which declares where they are (1.8: the main file's news)
-    want = {"massive-news": ("0.3.0", "2.2"),  # Massive's headlines: released with Massive's package
+    want = {"massive-news": ("0.3.1", "2.2"),  # Massive's headlines: released with Massive's package
             **{n: (v, a) for n, (v, a, _) in PACKAGED.items()},  # the packages: their distributions' versions
             **dict.fromkeys(("federal", "fed", "nyfed", "sec", "bls", "fedreg", "cftc"), ("0.3.0", "2.2")),  # its package's
             "french": ("0.3.0", "2.2"), "datahub": ("0.3.0", "2.2")}  # the dataset libraries: packages too
@@ -369,7 +369,7 @@ def test_the_plugins_command_shows_each_plugins_version_and_origin(monkeypatch, 
     assert pubs["federal"]["parts"][-1]["datasets"] == ["cftc-cot-legacy"] and len(pubs["french"]["datasets"]) == 4
     assert [k["name"] for k in pubs["federal"]["keys"]] == ["GOV_CONTACT"]  # the SEC's, set for the plugin
     massive = next(r for r in out["providers"] if r["name"] == "massive")
-    assert [(r["name"], r["version"], r["account"]) for r in massive["publishers"]] == [("massive-news", "0.3.0", "massive")]
+    assert [(r["name"], r["version"], r["account"]) for r in massive["publishers"]] == [("massive-news", "0.3.1", "massive")]
     assert cli.main(["plugins"]) == 0
     text = capsys.readouterr().out
     assert text.startswith(f"Plugin API {registry.PLUGIN_API}")
@@ -378,7 +378,7 @@ def test_the_plugins_command_shows_each_plugins_version_and_origin(monkeypatch, 
                and "you set: GOV_CONTACT" in line
                for line in text.splitlines())
     assert any(line.strip().startswith("and Federal Reserve (fed):") for line in text.splitlines())
-    assert "[0.3.0 for plugin API 2.2, package: plugin-integrator-alpaca (plugin_integrator_alpaca)]" in text
+    assert "[0.3.1 for plugin API 2.2, package: plugin-integrator-alpaca (plugin_integrator_alpaca)]" in text
     assert "[0.3.0 for plugin API 2.2, package: plugin-integrator-bitstamp (plugin_integrator_bitstamp:PLUGIN)]" in text
     assert any(line.strip().startswith("and Massive headlines (publisher massive-news):") for line in text.splitlines())
     assert not any(line.startswith("massive-news") for line in text.splitlines())
