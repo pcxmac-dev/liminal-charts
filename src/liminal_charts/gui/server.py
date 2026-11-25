@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
-from liminal_libs import config, freshness, live, mongo, sourcing
+from liminal_libs import config, freshness, lifecycle, live, mongo, sourcing
 from liminal_libs.apps import Refused, serve_object
 from liminal_libs.config import Settings
 from liminal_libs.storage import LayoutLimit, Store
@@ -1110,10 +1110,13 @@ class ChartApp:
         return out
 
     def _spawn(self, args: list[str]):
-        """A command of the app in its own windowless process (kept, so it is reaped)."""
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                stdin=subprocess.DEVNULL, creationflags=flags)
+        """A command of the app in its own windowless process (kept, so it is reaped). 0.2.5 (Monday list item 38):
+        through lifecycle.spawn, written in the process ledger as the charts app's and tied to this process (its job
+        object on Windows, PR_SET_PDEATHSIG on Linux), so it ends with the app however the app ends; started through
+        this module's subprocess.Popen (the tests' stand-in refuses every start)."""
+        kind = str(args[3]) if len(args) > 3 else "command"  # [python, -m, liminal_charts, <command>, ...]
+        return lifecycle.spawn(args, owner="charts", kind=kind, tied=True, popen=subprocess.Popen,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 
     def _spx_close(self) -> tuple[str, float] | None:
         """The S&P 500's newest daily close held (the circuit breakers' reference), or None."""

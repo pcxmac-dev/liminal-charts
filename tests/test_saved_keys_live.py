@@ -63,6 +63,6 @@ def test_a_sync_reads_saved_keys_again_before_each_feed(tmp_path, monkeypatch):
     # every feed's run is a process of its own (the host feed-NAME, held by the fetcher), which reads
     # the saved keys when it starts: `sync` over every feed, by hand or for a symbol, asks the fetcher
     asked = []
-    monkeypatch.setattr(cli, "dispatch", lambda s, log=None, tickers=None: asked.append(tickers) or 1)
+    monkeypatch.setattr(cli, "dispatch", lambda s, log=None, tickers=None, stop=None: asked.append(tickers) or 1)
     args = SimpleNamespace(all_sources=True, source=None, tickers=["SPCX"])
     assert cli._sync(args, settings) == (0, 1) and asked == [{"SPCX"}] and seen == ["massive"]

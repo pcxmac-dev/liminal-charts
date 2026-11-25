@@ -148,7 +148,7 @@ def test_sync_by_hand_holds_the_fetcher_and_asks_it_for_a_pass_or_the_symbols(tm
         cli.wait_for_fetcher(att3, lines.append)
     assert att3.detached and lines[-1].startswith("sync: the fetcher let go")
     # `sync --tickers` by hand goes the same way
-    monkeypatch.setattr(cli, "dispatch", lambda s, log=None, tickers=None: lines.append(f"dispatch {sorted(tickers or [])}") or 1)
+    monkeypatch.setattr(cli, "dispatch", lambda s, log=None, tickers=None, stop=None: lines.append(f"dispatch {sorted(tickers or [])}") or 1)
     args = cli.build_parser().parse_args(["sync", "--tickers", "spcx"])
     assert cli._sync(args, settings) == (0, 1) and lines[-1] == "dispatch ['SPCX']"
 
@@ -211,7 +211,7 @@ def test_nothing_is_scheduled_and_the_extras_run_alone(tmp_path, monkeypatch, ca
     assert cli.cmd_schedule(Namespace(action="install", every_hours=1), settings) == 2
     assert "nothing is scheduled" in capsys.readouterr().out
     done: list[str] = []
-    monkeypatch.setattr(cli, "_fetch_gov", lambda s, log, force=False: done.append("gov"))
+    monkeypatch.setattr(cli, "_fetch_gov", lambda s, log, force=False, stop=None: done.append("gov"))
     monkeypatch.setattr(cli, "_stores_pass", lambda s, log, history=True: done.append(f"stores history={history}"))
     monkeypatch.setattr(cli, "after_sync", lambda args, s: done.append("after"))
     monkeypatch.setattr(cli, "_sync", lambda args, s: done.append("feeds") or (0, 0))

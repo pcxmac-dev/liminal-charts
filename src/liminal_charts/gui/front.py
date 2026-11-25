@@ -29,6 +29,8 @@ No database is opened here, and no pipe: the integrator holds the fetcher while 
 from __future__ import annotations
 
 import json
+import os
+import signal
 import threading
 import urllib.error
 import urllib.request
@@ -401,12 +403,62 @@ def make_front_handler(front: Front):
     return Handler
 
 
+STOP_LOOK_S = 0.5  # the charts' stop event is looked at this often (0.2.5)
+
+
+def stop_event():
+    """The charts app's stop event (0.2.5; liminal-libs 1.87.0's lifecycle.StopEvent, liminal-stop-charts, which
+    liminal-signal sets before it ends anything): the front is made by hand, not served by App.serve, which looks at
+    it for the apps it serves. None off Windows, where SIGTERM is heard."""
+    from liminal_libs import lifecycle
+
+    if os.name != "nt":
+        return None
+    return lifecycle.StopEvent(lifecycle.stop_event_name(ChartsApp.NAME))
+
+
+def _watch(event, stop: threading.Event, log, every: float | None = None) -> None:
+    """`stop` set once `event` is (a thread, until `stop`); the event given back at the end."""
+    try:
+        while not stop.wait(STOP_LOOK_S if every is None else every):
+            if event.is_set():
+                log("front: asked to stop (its stop event): the page goes down, its login closed")
+                stop.set()
+    finally:
+        event.close()
+
+
+def _on_sigterm(stop: threading.Event):
+    """SIGTERM (SIGBREAK on Windows) sets `stop`, on the main thread only; returns what puts the old handlers back."""
+    if threading.current_thread() is not threading.main_thread():
+        return lambda: None
+    old = {}
+    for name in ("SIGTERM", "SIGBREAK"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            old[number] = signal.signal(number, lambda signum, frame: stop.set())
+        except (OSError, ValueError):
+            continue
+
+    def restore() -> None:
+        for number, was in old.items():
+            try:
+                signal.signal(number, was)
+            except (OSError, ValueError, TypeError):
+                pass
+
+    return restore
+
+
 def serve_front(db_path: Path, port: int = 8765, open_browser: bool = True, log=None,
                 stop: threading.Event | None = None) -> None:
     """The chart app: its page here, its data through the integrator it links (never started from here), its
     login held here. On `port` (0, any free one, is a test's); a port something else answers on is refused
     (PortTaken), never traded for another (the user, 2026-11-14: "never provide ports for anything else").
-    Until Ctrl+C or `stop` is set."""
+    Until Ctrl+C or `stop` is set, or (0.2.5) SIGTERM or its stop event (Windows); then it ends in good order: the
+    server shut down, the charts app it holds stopped (its login, what it started)."""
     log = log or log_to(db_path)
     front = Front(db_path, log)
     stop = stop or threading.Event()
@@ -431,11 +483,17 @@ def serve_front(db_path: Path, port: int = 8765, open_browser: bool = True, log=
         httpd.shutdown()
 
     threading.Thread(target=stopping, name="front-stop", daemon=True).start()
+    event = stop_event()
+    if event is not None:
+        threading.Thread(target=_watch, args=(event, stop, log), name="front-stop-event", daemon=True).start()
+    restore = _on_sigterm(stop)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         stop.set()
+        restore()
         httpd.server_close()
         front.close()
+        log("front: ended")

@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import signal
 import subprocess
 import sys
+import threading
 import time
 from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import date, datetime, timedelta, timezone
@@ -208,6 +210,60 @@ def api_run(args, settings: Settings, command: str, lock: bool = True) -> Iterat
 
 
 HOST_STOPPED = "the app is no longer in use: this run stops here (resumed at the next)"
+# 0.2.5 (Monday list item 38; the shutdown audit of 2026-11-24): how a process of the app's hears that it is to stop.
+# A console-less pythonw on Windows hears no SIGTERM and `schtasks /End` kills outright, so each looks at a named stop
+# event (liminal-libs 1.87.0's lifecycle.StopEvent): its own, named by its starter in STOP_VAR (the integrator's fetcher
+# names one for the extras it starts, 1.14.0), else its app's (liminal-stop-<app>, which liminal-signal sets)
+STOP_VAR = "LIMINAL_STOP_EVENT"
+STOP_LOOK_S = 0.25  # a stop event is looked at this often
+HOST_APPS = {"fetcher": "integrator", "history": "integrator", "live": "charts"}  # whose stop event a host answers to
+
+
+def watch_stop_events(names, on_set, k32=None, every: float | None = None) -> threading.Event:
+    """`on_set(name)` called once, from a thread of its own, when any of the stop events `names` is set (Windows; a
+    test's `k32` elsewhere); the events given back then. Returns what ends the watch (set it to stop looking)."""
+    done = threading.Event()
+    names = [n for n in names if n]
+    if not names or (os.name != "nt" and k32 is None):
+        return done
+    from liminal_libs import lifecycle
+
+    events = [lifecycle.StopEvent(n, k32=k32) for n in names]
+
+    def watch() -> None:
+        try:
+            while not done.wait(STOP_LOOK_S if every is None else every):
+                hit = next((e for e in events if e.is_set()), None)
+                if hit is not None:
+                    on_set(hit.name)
+                    return
+        finally:
+            for e in events:
+                e.close()
+
+    threading.Thread(target=watch, name="stop-events", daemon=True).start()
+    return done
+
+
+def listen_for_stop(app: str = "charts", env=None, k32=None, every: float | None = None) -> threading.Event:
+    """The stop of a command that works through symbols (`sync`, its extras): set by SIGTERM (SIGBREAK on Windows; on
+    the main thread only) and on Windows by its own stop event when its starter named one in STOP_VAR, else by its
+    app's. The name is taken out of the environment, so what it starts (a host) does not answer to it."""
+    stop = threading.Event()
+    if threading.current_thread() is threading.main_thread():
+        for name in ("SIGTERM", "SIGBREAK"):
+            number = getattr(signal, name, None)
+            if number is not None:
+                try:
+                    signal.signal(number, lambda signum, frame: stop.set())
+                except (OSError, ValueError):
+                    pass
+    from liminal_libs import lifecycle
+
+    env = os.environ if env is None else env
+    own = env.pop(STOP_VAR, "") or ""
+    watch_stop_events([own or lifecycle.stop_event_name(app)], lambda name: stop.set(), k32=k32, every=every)
+    return stop
 
 
 def _pause_check(store: Store, every: float = 2.0, halt_only: bool = False, stop=None):
@@ -375,11 +431,18 @@ def cmd_sync(args, settings: Settings) -> int:
     that is fetching takes them next in its own run. Then, outside the run locks, the composites
     and derived frames from what arrived (after_sync): they fetch nothing; once an hour for the
     hourly sync, not after each feed's run (--fetch-only, as dispatch starts them)."""
+    stop = getattr(args, "_stop", None)
+    if stop is None:  # 0.2.5: its TERM (SIGTERM, or its stop event on Windows), passed down to every step
+        stop = args._stop = listen_for_stop()
     if getattr(args, "extras_only", False):  # the chart app's pass: its feeds are attached by the app itself
         log = Logger(settings.db_path.parent / "logs" / "liminal.log")
-        _fetch_gov(settings, log)
-        _stores_pass(settings, log, history=False)
-        after_sync(args, settings)
+        _fetch_gov(settings, log, stop=stop)
+        if not stop.is_set():
+            _stores_pass(settings, log, history=False)
+        if not stop.is_set():
+            after_sync(args, settings)
+        if stop.is_set():
+            log("sync: the extras were asked to stop; the rest at the next pass")
         return 0
     code, ran = _sync(args, settings)
     if ran and not getattr(args, "fetch_only", False):
@@ -387,7 +450,7 @@ def cmd_sync(args, settings: Settings) -> int:
     return code
 
 
-def dispatch(settings: Settings, log=None, tickers: set[str] | None = None) -> int:
+def dispatch(settings: Settings, log=None, tickers: set[str] | None = None, stop=None) -> int:
     """`sync` run by hand: the fetcher (fetcher.py: the host `fetcher`, started if none answers)
     held while this command runs and asked for a standing pass (every feed's run, the closed
     months' copy, the extras), or with `tickers` for those symbols (requests on its stack); waited
@@ -402,6 +465,8 @@ def dispatch(settings: Settings, log=None, tickers: set[str] | None = None) -> i
     if held is None:
         log("sync: no fetcher answered (and none could be started); nothing fetched")
         return 0
+    if stop is not None:  # 0.2.5: asked to stop, the fetcher is let go with a word (the waits below see it gone)
+        threading.Thread(target=lambda: stop.wait() and held.detach(), name="sync-stop", daemon=True).start()
     try:
         if tickers:
             with Store(settings.db_path) as store:
@@ -440,7 +505,7 @@ def _stores_pass(settings: Settings, log, history: bool = True):
     (MongoDB under its keeper if it is the one), and with `history` a `history run` attached for
     the feeds whose closed months go to DuckDB, unless one is going on (returned, to be held; the
     chart app holds its own). A failure is logged, never the sync's."""
-    from liminal_libs import gov, stores
+    from liminal_libs import gov, mongo, stores
 
     try:
         with Store(settings.db_path) as store:
@@ -449,6 +514,9 @@ def _stores_pass(settings: Settings, log, history: bool = True):
                 stores.settle(store, gdb.conn, settings.db_path.parent, log)
             finally:
                 gdb.close()
+                # 0.2.5 (the shutdown audit of 2026-11-24): MongoDB's keeper let go once the documents are moved; it
+                # was held, and mongod with it, until this process ended (20-60 minutes of the extras, plus 60 s)
+                mongo.detach()
         if history and history_due(settings):
             with Store(settings.db_path) as store:
                 feeds = stores.bars_feeds(store)
@@ -623,29 +691,61 @@ def after_sync(args, settings: Settings) -> bool:
         logger("derived frames: another process is building them; left to it")
         return False
     tickers = {t.upper() for t in getattr(args, "tickers", None) or []} or None
+    # 0.2.5: its TERM (cmd_sync's, a host's) asked before each asset, symbol, dataset, file and commit (liminal-libs
+    # 1.87.0): the rest at the next pass, which builds what this one did not reach
+    event = getattr(args, "_stop", None)
+    stop = event.is_set if event is not None else None
     try:
         with Store(settings.db_path) as store:
-            composite.refresh(store, feed_profiles(settings), collector.now_et(), log=logger)
-            _derive(store, tickers, logger)  # the time frames the feeds do not send, from what just arrived
-            if args.all_sources and not tickers:  # research datasets fetched before, when due (never starts one)
-                from liminal_libs import datasets
+            composite.refresh(store, feed_profiles(settings), collector.now_et(), log=logger, stop=stop)
+            if not (stop is not None and stop()):
+                _derive(store, tickers, logger, stop=stop)  # the time frames the feeds do not send, from what just arrived
+            if args.all_sources and not tickers and not (stop is not None and stop()):
+                from liminal_libs import datasets  # research datasets fetched before, when due (never starts one)
 
-                datasets.fetch(store, log=logger, only_started=True)
+                datasets.fetch(store, log=logger, only_started=True, stop=stop)
     finally:
         claims.let_go(held)
     return True
 
 
-def _fetch_gov(settings: Settings, log, force: bool = False) -> None:
+def _fetch_gov(settings: Settings, log, force: bool = False, stop=None) -> None:
     """The publisher plugins' due feeds (publications.py: the agencies, a vendor's headlines), each
     on its own schedule and under its scrape checks (`force`: every feed its floor allows); a
-    failure is logged and never fails the caller."""
+    failure is logged and never fails the caller. `stop` (0.2.5, an Event): asked before each feed and lent to each
+    read (liminal-libs 1.87.0's Reader.stopping)."""
     from liminal_libs import publications
 
     try:
+        if stop is not None:
+            _read_due(settings, log, force, stop.is_set)
+            return
         publications.run_due(settings, log, force=force)
     except Exception as e:  # noqa: BLE001 - the publications are extras: the run's data is in
         log(f"publications: failed ({type(e).__name__}: {e})")
+
+
+def _read_due(settings: Settings, log, force: bool, stopping) -> None:
+    """publications.run_due with the reader's `stopping` set (the library's run_due takes none): one pass over the
+    due feeds under the machine's lock, none while offline or while another reader holds it."""
+    from datetime import timezone as _tz
+
+    from liminal_libs import claims, gov, publications
+
+    if getattr(settings, "offline", False):
+        return
+    held = publications.take_reader(settings.db_path)
+    if held is None:
+        return
+    gdb = gov.open_db(settings.db_path)
+    try:
+        with Store(settings.db_path) as store:
+            reader = publications.Reader(gdb, settings, store, log=log)
+            reader.stopping = stopping
+            reader.step(datetime.now(_tz.utc), force=force)
+    finally:
+        gdb.close()
+        claims.let_go(held)
 
 
 def cmd_updates(args, settings: Settings) -> int:
@@ -711,7 +811,7 @@ def _sync(args, settings: Settings) -> tuple[int, int]:
         except Busy:  # a feed is fetching: done by a later sync, with every feed at rest
             pass
     if args.all_sources:  # by hand: the fetcher's pass, or the symbols given on its stack (dispatch)
-        return 0, dispatch(settings, tickers=tickers)
+        return 0, dispatch(settings, tickers=tickers, stop=getattr(args, "_stop", None))
     ran, errors = 0, []
     saved = config.saved_user_keys()
     for name in names:
@@ -924,6 +1024,12 @@ def cmd_host(args, settings: Settings) -> int:
     from liminal_libs import host, live
 
     log = Logger(settings.db_path.parent / "logs" / "liminal.log")
+    # 0.2.5: a host answers its app's stop event too (Windows: a console-less pythonw hears no SIGTERM, which
+    # Host.serve answers elsewhere): the integrator's for its fetcher, its feeds' runs and the closed months' copy, the
+    # charts' for the recorder. MongoDB's keeper answers none: it ends once its clients have let it go
+    app = HOST_APPS.get(args.name) or ("integrator" if args.name.startswith("feed-") else None)
+    if app is not None:
+        _host_answers_its_stop_event(args.name, app, log)
     if args.name == host.FETCHER:  # the fetcher (liminal-integrator): its requests and passes, its page and the data API
         try:
             from liminal_integrator import fetcher as integrator_fetcher
@@ -974,10 +1080,34 @@ def cmd_host(args, settings: Settings) -> int:
     return 2
 
 
+def _host_answers_its_stop_event(name: str, app: str, log, k32=None, every: float | None = None,
+                                 raise_signal=None, getsignal=None, wait_s: float = 30.0) -> threading.Event:
+    """The host `name` about to serve in this process ended in good order once its app's stop event is set: SIGTERM
+    raised in this process, which Host.serve answers on its main thread (its `signal(TERM)`: its data secured, what it
+    started ended). Raised only once Host.serve's handler is in place (up to `wait_s`): before it, SIGTERM's default
+    would end the process outright. `raise_signal`, `getsignal`: a test's stand-ins."""
+    from liminal_libs import lifecycle
+
+    raise_signal = raise_signal or signal.raise_signal
+    getsignal = getsignal or signal.getsignal
+
+    def asked(event_name: str) -> None:
+        end = time.monotonic() + wait_s
+        while not callable(getsignal(signal.SIGTERM)) and time.monotonic() < end:
+            time.sleep(STOP_LOOK_S)
+        if not callable(getsignal(signal.SIGTERM)):
+            log(f"host {name}: asked to stop ({event_name}) before it served: left to its clients")
+            return
+        log(f"host {name}: asked to stop ({event_name}): it ends, its data secured")
+        raise_signal(signal.SIGTERM)
+
+    return watch_stop_events([lifecycle.stop_event_name(app)], asked, k32=k32, every=every)
+
+
 SUPERSEDED_KEY = "derive:superseded:v1"
 
 
-def _derive(store: Store, tickers, log) -> int:
+def _derive(store: Store, tickers, log, stop=None) -> int:
     """Built bars a feed has since sent its own for go (once: later the database does it as they
     arrive), then the frames above 1 minute are built where anything changed (derive.py)."""
     from liminal_libs import derive
@@ -988,7 +1118,7 @@ def _derive(store: Store, tickers, log) -> int:
             if n:
                 log(f"derive {feed}: {n:,} built bars replaced by the feed's own")
         store.kv_set(SUPERSEDED_KEY, datetime.now().isoformat(timespec="seconds"))
-    return derive.run(store, tickers=tickers, log=log)
+    return derive.run(store, tickers=tickers, log=log, stop=stop)
 
 
 def cmd_derive(args, settings: Settings) -> int:

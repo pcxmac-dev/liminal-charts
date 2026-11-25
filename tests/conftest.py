@@ -128,6 +128,39 @@ def tick_access_restored():
 
 
 @pytest.fixture(autouse=True)
+def no_stop_events_or_signals(monkeypatch, tmp_path):
+    """0.2.5 (Monday list item 38): tests never open, set or wait on a real stop event (the apps' named events on
+    Windows), never end a process through the lifecycle (its table, killer and ledger are stand-ins: a stand-in Popen's
+    made-up id may be a real process's), and never leave a test's SIGTERM handler behind. A test that wants the real
+    StopEvent class gives it a stand-in kernel32."""
+    import signal
+
+    from liminal_libs import lifecycle
+
+    class Never:
+        def __init__(self, name, k32=None):
+            self.name = name
+
+        def is_set(self):
+            return False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(lifecycle, "StopEvent", Never)
+    monkeypatch.setattr(lifecycle, "set_stop_event", lambda name, k32=None: False)
+    monkeypatch.setenv(lifecycle.LEDGER_VAR, str(tmp_path / "processes.json"))
+    old = {n: signal.getsignal(getattr(signal, n)) for n in ("SIGTERM", "SIGBREAK") if hasattr(signal, n)}
+    table = lifecycle.FakeTable()
+    with lifecycle.standins(table=table, killer=table, ledger=lifecycle.MemoryLedger()):
+        yield
+    for n, was in old.items():
+        signal.signal(getattr(signal, n), was)
+    with lifecycle._MINE_LOCK:
+        lifecycle._MINE.clear()
+
+
+@pytest.fixture(autouse=True)
 def no_recorders(monkeypatch, tmp_path):
     """Tests never start the live recorder: `sync` would start a real detached process (with real
     exchange connections) pointed at the test's temporary folder."""
