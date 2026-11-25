@@ -12,19 +12,20 @@
    the page is hidden or another view is shown. A large table is never counted: its rows are SQLite's statistics
    or an estimate from its B-tree (≈), a feed's months the counts its manifest took when each was copied.
    At the top of the list, the engines: each database plugin (GET /api/databases/plugins: liminal-integrator 1.12.0)
-   with its instances, the ones it has by itself and the ones you add; the one picked shows them with Test and its
-   forms (New database, Connect, Share, Port, Sign-in, Forget: POST /api/databases/instances), then its API card. An
-   integrator from before them answers neither: the view is then as it was. */
+   with its instances, the ones it has by itself and the ones you add; the one picked shows them with their figures
+   and Test (a read: POST /api/databases/instances {action: test}), then its API card. Since 0.2.8 (Monday list item
+   30, step 5; the user, 2026-11-25: the instance forms move to the platform's Databases section, the platform the only
+   writer of instance settings) its change forms are links into the platform's page for that plugin, its Main,
+   External API and Internal API tabs (/platform/#sqlite, #sqlite/external, #sqlite/internal): no form here posts a
+   change. An integrator from before them answers neither: the view is then as it was. */
 (() => {
   const box = document.getElementById('viewDatabases');
   const { esc } = window.LiminalIcons;
   const LIST_MS = 10_000, DETAIL_MS = 30_000;
   let data = null, sel = null, detail = null, detailAt = 0, timer = null, failed = null, asking = null;
   let engines = null;  // the database plugins with their instances (null: an integrator from before them, or not read)
-  let form = null;  // the form open on the plugin picked: {plugin, kind, name}
-  let pending = null;  // a change waiting for a yes here: {plugin, body, words, second}
-  let said = null;  // what the last form's answer said: {plugin, ok, said, lines}
-  let busy = false;  // a form is being answered
+  let said = null;  // what the last test's answer said: {plugin, ok, said, lines}
+  let busy = false;  // a test is being answered
 
   const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   function bytes(n) {
@@ -249,17 +250,48 @@
 
   // -- the engines: each database plugin with its instances (liminal-integrator 1.12.0; the user, 2026-11-15: "for the
   // integrator i need plugins for each type of database ... each instance in the plugin has it's own configuration how
-  // it's shared, ports, permissions etc"). A plugin is picked like a database; its forms are asked in the page before
-  // anything is sent (a native confirm is no question a touch screen or a test can answer), and asked a second time
-  // when the plugin's refusal names what accepts it (a server off this machine).
+  // it's shared, ports, permissions etc"). A plugin is picked like a database. Since 0.2.8 (Monday list item 30, step 5;
+  // the user, 2026-11-25: the instance forms move to the platform's Databases section, the platform the only writer of
+  // instance settings, the charts' view keeping its list and linking there): its instances and their figures here, and
+  // Test, a read; every change (New database, Connect, Share, Port, Sign-in, Forget) is made on the platform's page for
+  // the plugin, which this view links: its Main, External API and Internal API tabs. Nothing here posts a change.
   const pluginOf = (id) => (typeof id === 'string' && id.startsWith('plugin:')
     ? (engines?.plugins || []).find((p) => `plugin:${p.name}` === id) || null : null);
-  const canChange = (p) => !!(p.can && p.can.forget);
+  const ELSEWHERE = "change this on the platform's Databases section";
+  // the platform's tabs for a plugin's page (liminal-platform 0.36.0: #name, #name/external, #name/internal)
+  const PLATFORM_TABS = [
+    ['', 'Main', 'its instances and their forms: New database, Connect, Share, Port, Sign-in, Forget'],
+    ['external', 'External API', 'what it attaches to'],
+    ['internal', 'Internal API', 'what it shares with the platform and the other apps']];
+  // Where the platform's page is: the address the answer names (a page not under the charts front), else the platform
+  // the charts front links, under /platform/ (gui/front.py PLATFORM_PREFIX). The integrator's own page links no
+  // platform: its words alone, no link.
+  function platformBase() {
+    const named = engines && typeof engines.platform === 'string' ? engines.platform.trim() : '';
+    if (/^(https?:\/\/|\/)[^\s"'<>]*$/.test(named)) return named.endsWith('/') ? named : `${named}/`;
+    return window.FETCHER_MODE ? null : '/platform/';
+  }
+  const platformItem = (p, tab) => (tab ? `${p.name}/${tab}` : p.name);
+  function platformHref(p, tab) {
+    const base = platformBase();
+    return base ? `${base}#${encodeURIComponent(p.name)}${tab ? `/${tab}` : ''}` : null;
+  }
+  function platformLink(p, tab, label, what) {
+    const href = platformHref(p, tab);
+    if (!href) return '';
+    return `<a class="db-link" href="${esc(href)}" target="_blank" rel="noopener" data-platform="${esc(platformItem(p, tab))}"
+      title="${esc(`${p.title || p.name} on the platform, ${label}: ${what}. ${ELSEWHERE[0].toUpperCase()}${ELSEWHERE.slice(1)}.`)}">${esc(label)}</a>`;
+  }
+  // the links into the platform's page for the plugin, with the words that say why
+  function platformHtml(p) {
+    const links = PLATFORM_TABS.map(([tab, label, what]) => platformLink(p, tab, label, what)).join('');
+    return `<div class="db-links"><span class="db-elsewhere">New database, Connect, Share, Port, Sign-in, Forget: ${esc(ELSEWHERE)}${links ? '.' : ' (the platform\'s page).'}</span>${links}</div>`;
+  }
 
   function enginesHtml() {
     if (!engines || !(engines.plugins || []).length) return '';
     const left = (engines.errors || []).map((why) => `<div class="small warn db-note">${esc(why)}</div>`).join('');
-    return `<h4 class="ex-group" title="The database plugins: an engine each, with its instances (its own, and the ones you add)">Engines</h4>${left}`
+    return `<h4 class="ex-group" title="The database plugins: an engine each, with its instances (its own, and the ones added on the platform)">Engines</h4>${left}`
       + engines.plugins.map((p) => {
         const all = p.instances || [], added = all.filter((i) => !i.builtin).length;
         const state = p.error ? 'not read' : p.driver && !p.driver.ok ? 'no driver' : `${num(all.length)} instance${all.length === 1 ? '' : 's'}`;
@@ -282,81 +314,14 @@
     const how = [esc(i.methodTitle || i.method), i.tls ? 'TLS' : '', i.remote ? 'off this machine' : '',
       i.auth ? `signs in${i.role ? ` as ${esc(i.role)}` : ''}${i.signsIn === false ? ' <span class="warn">(its sign-in is missing)</span>' : ''}` : '']
       .filter(Boolean).join(' · ');
-    const act = (what, label, title) => `<button type="button" data-do="${what}" data-inst="${esc(i.name)}" title="${esc(title)}">${label}</button>`;
-    const acts = [act('test', 'Test', 'Open it for reading and ask what it is')];
-    if (p.can && p.can.share) acts.push(act('share', 'Share…', 'Who else may attach to it, and how far'));
-    if (p.server && i.method === 'tcp' && canChange(p)) acts.push(act('port', 'Port…', 'Its port, its own'));
-    if (p.server && !i.builtin && canChange(p)) acts.push(act('signin', 'Sign-in…', 'The name and password it signs in with, kept through the login'));
-    if (!i.builtin && canChange(p)) acts.push(act('forget', 'Forget', 'Forget this instance: what it holds stays where it is'));
+    // Test, a read; a change (Share, Port, Sign-in, Forget) on the platform's page for the plugin
+    const acts = [`<button type="button" data-do="test" data-inst="${esc(i.name)}" title="Open it for reading and ask what it is">Test</button>`,
+      platformLink(p, '', 'Change…', `${i.name}'s share, port, sign-in, or forgetting it`)];
     return `<tr><td><b>${esc(i.title || i.name)}</b><div class="sub">${esc(i.name)} · ${kind}</div></td>
       <td class="small">${(i.holds || []).map((h) => esc(h.name)).join(', ') || '<span class="p-muted">nothing yet</span>'}</td>
       <td class="small"><code>${esc(i.place || i.where || '')}</code><div class="sub">${how}</div></td>
       <td class="small">${esc(i.sharedWords || '')}</td><td class="small">${stateHtml(i)}</td>
       <td class="db-acts">${acts.join('')}</td></tr>`;
-  }
-
-  const field = (label, input, note) => `<label class="db-field"><span>${label}</span>${input}${note ? `<small class="p-muted">${note}</small>` : ''}</label>`;
-  const text = (name, attrs = '') => `<input name="${name}" autocomplete="off" spellcheck="false" ${attrs}>`;
-  const secret = (name) => `<input name="${name}" type="password" autocomplete="off">`;
-  const holdsHtml = (p) => `<fieldset class="db-field"><legend>Holds</legend>${(p.holds || []).map((h) => `<label class="db-check">
-    <input type="checkbox" name="holds" value="${esc(h.name)}"> ${esc(h.title)}</label>`).join('')}</fieldset>`;
-
-  // A form's markup depends on which form is open, never on what is typed in it: drawn again every 10 s it stays as it
-  // is (Views.patch leaves a part whose markup did not change), and what was typed with it.
-  function formHtml(p) {
-    if (!form || form.plugin !== p.name) return '';
-    const i = (p.instances || []).find((x) => x.name === form.name);
-    const open = (title, note) => `<form class="db-form" data-kind="${form.kind}" autocomplete="off"><h4>${title}</h4><div class="p-muted small">${note}</div>`;
-    const end = (go) => `<div class="db-form-acts"><button type="submit" class="primary">${go}</button><button type="button" data-do="cancel">Cancel</button></div></form>`;
-    if (form.kind === 'new' || form.kind === 'connect') {
-      const making = form.kind === 'new';
-      const name = field('Name', text('name', 'maxlength="32" required placeholder="archive"'), 'lowercase letters, digits and dashes');
-      const title = field('Title', text('title', 'maxlength="60"'), 'what the page calls it (it may be left empty)');
-      if (!p.server) {
-        const where = making
-          ? field('File', text('where', 'placeholder="left empty: instances/ in the data folder"'), 'or a whole path, in a folder that is there; never over a file')
-          : field('File', text('where', 'required placeholder="backups/…, or a whole path"'), 'a file that exists: its path in the data folder, or its whole path');
-        return `${open(making ? 'New database' : 'Connect a database',
-          making ? `A new ${esc(p.engineTitle)} file, made by this system.` : `A ${esc(p.engineTitle)} file that exists: kept only when it answers.`)}
-          ${name}${where}${title}${holdsHtml(p)}${end(making ? 'Make it' : 'Connect it')}`;
-      }
-      const host = field('Server', text('where', 'value="127.0.0.1" required'), 'its host; off this machine only when you say so twice, over TLS and signed in');
-      const port = field('Port', `<input name="port" type="number" min="1" max="65535" value="${esc(p.defaultPort ?? '')}">`, '');
-      const database = field('Database', text('database', making ? 'placeholder="left empty: its name"' : 'required'), making ? '' : 'the database on that server');
-      const tls = '<label class="db-check"><input type="checkbox" name="tls"> over TLS</label>';
-      const sign = making
-        ? field("The server's administrator", text('admin_user'), 'only where the server signs in: a role of its own is then made for this database')
-          + field("The administrator's password", secret('admin_password'), 'asked once, not kept')
-        : field('Signs in as', text('user'), 'left empty where the server takes no sign-in')
-          + field('Password', secret('password'), 'kept through the login, never shown again');
-      return `${open(making ? 'New database' : 'Connect a database',
-        making ? `A new database on a ${esc(p.engineTitle)} server that runs.` : `A database on a ${esc(p.engineTitle)} server: kept only when it answers.`)}
-        ${name}${host}${port}${database}${sign}${title}${tls}${holdsHtml(p)}${end(making ? 'Make it' : 'Connect it')}`;
-    }
-    if (!i) return '';
-    if (form.kind === 'share') {
-      const others = (engines.suites || []).filter((s) => s !== engines.me);
-      return `${open(`Share ${esc(i.name)}`, `Who else may attach to it, by the name its suite has on a database (this one is ${esc(engines.me || '')}). Once a share is set on an instance, no other suite attaches to it.`)}
-        ${field('Suite', `${text('who', 'required list="dbSuites" placeholder="linux::Ubuntu"')}<datalist id="dbSuites">${others.map((s) => `<option value="${esc(s)}">`).join('')}</datalist>`, '')}
-        ${field('May', '<select name="access"><option value="read">read only</option><option value="write">read and write</option><option value="none">not attach (its share taken away)</option></select>', '')}
-        ${end('Set it')}`;
-    }
-    if (form.kind === 'port') {
-      return `${open(`${esc(i.name)}'s port`, i.builtin ? 'The server here: changed while it is stopped; each app reads it when it starts.' : 'Kept only when the server answers at the new port.')}
-        ${field('Port', `<input name="port" type="number" min="1" max="65535" required value="${esc(i.port ?? '')}">`, '')}${end('Change it')}`;
-    }
-    if (form.kind === 'signin') {
-      return `${open(`${esc(i.name)}'s sign-in`, 'Its name and password, kept through the login and never shown again. Both left empty: forgotten.')}
-        ${field('Signs in as', text('user'), '')}${field('Password', secret('password'), '')}${end('Keep it')}`;
-    }
-    return '';
-  }
-
-  function askHtml(p) {
-    if (!pending || pending.plugin !== p.name) return '';
-    const off = busy ? ' disabled' : '';
-    return `<div class="db-ask${pending.second ? ' second' : ''}"><span>${esc(pending.words)}</span>
-      <button type="button" class="primary" data-do="yes"${off}>${pending.second ? 'Yes, all the same' : 'Yes'}</button><button type="button" data-do="no"${off}>No</button></div>`;
   }
 
   function saidHtml(p) {
@@ -365,20 +330,22 @@
       ? `<ul>${said.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}</div>`;
   }
 
+  // the plugin's own word that a change is made elsewhere (a platform part that is not the writer: liminal-libs 1.90.0)
+  // is said once, by the links' words
+  const saysElsewhere = (why) => String(why || '').toLowerCase().includes(ELSEWHERE.toLowerCase());
+
   function pluginMainHtml(p) {
     if (p.error) return `<div class="db-note"><span class="warn">Not read:</span> <span class="small">${esc(p.error)}</span></div>`;
     const lacks = p.driver && !p.driver.ok;
-    const notes = [p.problem, lacks ? p.driver.why : '', !lacks && p.can && p.can.why ? p.can.why : ''].filter(Boolean);
-    const add = [p.can && p.can.new ? '<button type="button" data-do="new">New database…</button>' : '',
-      p.can && p.can.connect ? '<button type="button" data-do="connect">Connect…</button>' : ''].join('');
+    const notes = [p.problem, lacks ? p.driver.why : '', !lacks && p.can && p.can.why && !saysElsewhere(p.can.why) ? p.can.why : ''].filter(Boolean);
     // Each part has a place of its own, there even when empty: a redraw replaces a part only when its own markup
-    // changed (Views.patch), so a question appearing or going leaves the form as it is, with what was typed in it.
+    // changed (Views.patch), so a test's answer appearing leaves the rest as it is.
     const slot = (html) => html || '<div class="db-slot" hidden></div>';
     return `<div class="db-notes">${notes.map((n) => `<div class="db-note small warn">${esc(n)}</div>`).join('')}</div>
       <h4>Instances</h4><div class="table-wrap"><table class="act-table db-instances"><thead><tr><th>Instance</th><th>Holds</th><th>Where</th>
         <th>Shared with</th><th>State</th><th></th></tr></thead>
       <tbody>${(p.instances || []).map((i) => instanceRow(p, i)).join('')}</tbody></table></div>
-      <div class="db-add">${add}</div>${slot(formHtml(p))}${slot(askHtml(p))}${slot(saidHtml(p))}
+      ${platformHtml(p)}${slot(saidHtml(p))}
       <div class="db-apis">${window.LiminalApis ? window.LiminalApis.html(p.apis || [], p.apiFacts || {}, { owner: p.name, fold: true }) : ''}</div>`;
   }
 
@@ -390,58 +357,40 @@
       ['Can hold', (p.holds || []).map((h) => esc(h.title)).join('; ')],
       ['Shares', p.shares ? 'kept to by the helper: a suite on another system attaches as its share says' : esc(p.sharedNote || '')],
       ['Usual port', p.server && p.defaultPort ? esc(p.defaultPort) : null],
-      ['What you add', p.variable ? `kept through the integrator's login, as <code>${esc(p.variable)}</code>` : null],
+      ['What you add', p.variable ? `kept as <code>${esc(p.variable)}</code>, read here` : null],
+      ['Changed', `on the platform's Databases section, the one writer of instance settings`],
       ['Data folder', p.dataFolder ? `<code>${esc(p.dataFolder)}</code>` : null]];
     return `<h3>Specifics</h3>${spec(pairs)}
       <h4>How it is asked</h4><div class="p-muted small">Its instances are listed without opening them: a file's presence and size, and on this
         machine alone whether a server listens. Test opens one for reading and asks what it is. A server is never started to be asked, and another
-        machine is asked only by a test you start. A change is made by the system that holds the data, once you say yes to it here; forgetting an
-        instance removes nothing of what it holds.</div>`;
+        machine is asked only by a test you start. Nothing is changed from this page: a new database, a connection, a share, a port, a sign-in or
+        an instance forgotten is made on the platform's Databases section, the one writer of instance settings, which the links open.</div>`;
   }
 
-  function question(body) {
-    const n = body.name;
-    if (body.action === 'new') return `Make the database ${n}${body.where ? ` at ${body.where}` : ''}?`;
-    if (body.action === 'connect') return `Keep ${body.where} as the instance ${n}?`;
-    if (body.action === 'share') {
-      return body.access === 'none' ? `Take ${body.who}'s share of ${n} away?`
-        : `Let ${body.who} ${body.access === 'write' ? 'read and write' : 'read'} ${n}? No suite without a share of it will attach to it.`;
-    }
-    if (body.action === 'port') return `Change ${n}'s port to ${body.port}?`;
-    if (body.action === 'credentials') return body.user ? `Keep this sign-in for ${n}?` : `Forget ${n}'s sign-in?`;
-    return `Forget ${n}? What it holds stays where it is.`;
-  }
-
-  async function send(body) {
-    const res = await fetch('/api/databases/instances', { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify(body) });
+  // Test, the one form left here: a read, sent at once (it changes nothing; the action is always "test")
+  async function sendTest(p, name) {
+    const res = await fetch('/api/databases/instances', { method: 'POST', headers: WRITE_HEADERS,
+      body: JSON.stringify({ plugin: p.name, action: 'test', name }) });
     let got = {};
     try { got = await res.json(); } catch (err) { got = {}; }  // not JSON: its status says
     return { http: res.ok, status: res.status, body: got && typeof got === 'object' ? got : {} };
   }
 
-  // One form's answer: what the plugin said, shown under the instances; a refusal that names what accepts it becomes
-  // the page's second question (the same form sent again with that said); after a change the lists are read again.
-  async function answer(p, body) {
+  // A test's answer: what the plugin said, shown under the instances
+  async function test(p, name) {
     busy = true;
+    said = null;
     render();
     let got;
     try {
-      got = await send(body);
+      got = await sendTest(p, name);
     } catch (err) {
       got = { http: false, status: 0, body: { error: `The integrator did not answer: ${err.message || err}` } };
     }
     busy = false;
-    const accept = got.body.accept;
-    if (got.http) {
-      said = { plugin: p.name, ok: got.body.ok !== false, said: got.body.said || 'Done.', lines: got.body.lines || [] };
-      pending = null;
-      if (body.action !== 'test') { form = null; await load(); return; }
-    } else if (pending && !pending.second && typeof accept === 'string' && /^[a-z_]+$/.test(accept)) {
-      pending = { plugin: p.name, body: { ...body, [accept]: true }, words: got.body.error || 'Refused. All the same?', second: true };
-    } else {
-      pending = null;
-      said = { plugin: p.name, ok: false, said: got.body.error || `Refused (${got.status}).`, lines: [] };
-    }
+    said = got.http
+      ? { plugin: p.name, ok: got.body.ok !== false, said: got.body.said || 'Done.', lines: got.body.lines || [] }
+      : { plugin: p.name, ok: false, said: got.body.error || `Refused (${got.status}).`, lines: [] };
     render();
   }
 
@@ -487,56 +436,25 @@
     const b = ev.target.closest('[data-db]');
     if (b) {
       if (b.dataset.db === sel) return;
-      window.Views.letGo(box);  // a field of the plugin left is let go: the page is drawn for what was picked
       sel = b.dataset.db;
-      form = null; pending = null; said = null;
+      said = null;
       render();
       window.Views.reveal(box.querySelector('.ex-list'));  // on a phone (the columns stacked) the one picked, below the list
       if (!pluginOf(sel)) loadDetail(sel);
       return;
     }
-    const act = ev.target.closest('[data-do]');
+    // a link into the platform's page: in the bound view when the platform's tray is on the rail (the icon bridge,
+    // panels.js Views.bound), else as a link (a new tab); a click with a modifier always as a link
+    const link = ev.target.closest('a[data-platform]');
+    if (link) {
+      const plain = ev.button === 0 && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && !ev.altKey;
+      if (plain && window.Views.bound?.('platform', link.dataset.platform)) ev.preventDefault();
+      return;
+    }
+    const act = ev.target.closest('[data-do="test"]');
     const p = pluginOf(sel);
     if (!act || !p || busy) return;
-    const what = act.dataset.do, name = act.dataset.inst || null;
-    if (what === 'yes') { if (pending) answer(p, { ...pending.body, confirm: true }); return; }
-    if (what === 'test') { said = null; pending = null; answer(p, { plugin: p.name, action: 'test', name }); return; }
-    if (what === 'cancel') { form = null; pending = null; }
-    else if (what === 'no') pending = null;
-    else if (what === 'forget') {
-      const body = { plugin: p.name, action: 'forget', name };
-      form = null; said = null;
-      pending = { plugin: p.name, body, words: question(body) };
-    } else {  // a form opened: new, connect, share, port, signin
-      window.Views.letGo(box);
-      form = { plugin: p.name, kind: what, name };
-      pending = null; said = null;
-    }
-    render();
-  });
-  // A form sent: what it holds becomes the change waiting for a yes (its question under the form); nothing is sent yet.
-  box.addEventListener('submit', (ev) => {
-    const f = ev.target.closest('.db-form');
-    const p = pluginOf(sel);
-    if (!f) return;
-    ev.preventDefault();
-    if (!p || !form || busy) return;
-    const fd = new FormData(f);
-    const v = (k) => String(fd.get(k) ?? '').trim();
-    const typed = (k) => String(fd.get(k) ?? '');  // a password as typed
-    const kind = form.kind;
-    const body = { plugin: p.name, action: kind === 'signin' ? 'credentials' : kind, name: form.name || v('name') };
-    if (kind === 'new' || kind === 'connect') {
-      Object.assign(body, { where: v('where'), title: v('title'), holds: fd.getAll('holds').map(String) });
-      if (p.server) Object.assign(body, { port: v('port') || null, database: v('database'), tls: fd.get('tls') === 'on' });
-      if (p.server && kind === 'connect' && v('user')) Object.assign(body, { user: v('user'), password: typed('password') });
-      if (p.server && kind === 'new' && v('admin_user')) Object.assign(body, { admin_user: v('admin_user'), admin_password: typed('admin_password') });
-    } else if (kind === 'share') Object.assign(body, { who: v('who'), access: v('access') });
-    else if (kind === 'port') body.port = v('port');
-    else if (kind === 'signin') Object.assign(body, { user: v('user'), password: typed('password') });
-    said = null;
-    pending = { plugin: p.name, body, words: question(body) };
-    render();
+    test(p, act.dataset.inst || null);
   });
   window.addEventListener('liminal:view', (ev) => {
     if (ev.detail.view === 'databases') load();

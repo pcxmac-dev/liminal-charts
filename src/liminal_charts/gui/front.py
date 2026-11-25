@@ -28,6 +28,7 @@ No database is opened here, and no pipe: the integrator holds the fetcher while 
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import signal
@@ -42,6 +43,8 @@ from urllib.parse import urlsplit
 
 from liminal_libs import config
 from liminal_libs.apps import PAIRS_PATH, Binding, PortTaken, forward, pairs_wanted, serve_object
+from liminal_libs.apps import databases as db_section
+from liminal_libs.apps.platform import ELSEWHERE
 from liminal_libs.logs import log_to
 from ..frame import ChartsApp
 from . import web
@@ -98,6 +101,22 @@ CODEBASE_PREFIX = "/api/codebase"
 
 def _is_codebase(path: str) -> bool:
     return path == CODEBASE_PREFIX or path.startswith(CODEBASE_PREFIX + "/")
+
+
+# The database plugins' forms (0.2.8, Monday list item 30, step 5; the user, 2026-11-25: the instance forms move to the
+# platform's Databases section, the platform the only writer of instance settings): a test, a read, is passed on to the
+# integrator as before; a change is refused here and never passed on, whichever integrator answers (one from before
+# step 4 still takes changes), with where it is made: the platform's page for that plugin, under /platform/
+INSTANCES_PATH = "/api/databases/instances"
+
+
+def platform_page(plugin: str = "", tab: str = "") -> str:
+    """The platform's page for a database plugin as this front links it: /platform/#sqlite, #sqlite/external,
+    #sqlite/internal (liminal-platform 0.36.0's Databases section and its tabs); /platform/ for no plugin."""
+    from urllib.parse import quote
+
+    name = quote(str(plugin or "").strip(), safe="")
+    return f"{PLATFORM_PREFIX}/" + (f"#{name}" + (f"/{tab}" if tab else "") if name else "")
 
 
 class Front:
@@ -309,7 +328,35 @@ def make_front_handler(front: Front):
                 return serve_object(self, front.charts, method, self.path)
             if _is_platform(urlsplit(self.path).path) and platform_url() is not None:
                 return self._linked(method)
+            if urlsplit(self.path).path == INSTANCES_PATH:  # a database plugin's form: a test passed on, a change refused
+                return self._instances(method)
             self._proxy(method)
+
+        def _instances(self, method: str) -> None:
+            """A database plugin's form (POST /api/databases/instances): its body read here; a change (new, connect,
+            share, port, credentials, forget) refused, 409 "change this on the platform's Databases section" with the
+            platform's page for it, nothing passed on; a test, or anything not a change, passed on to the integrator
+            with the body as it came."""
+            raw = self.headers.get("Content-Length") or "0"
+            if method != "POST" or not raw.isdecimal() or int(raw) > web.MAX_BODY:
+                return self._proxy(method)  # the integrator's to answer (forward refuses a bad length itself)
+            data = self.rfile.read(int(raw)) if int(raw) else b""
+            try:
+                body = json.loads(data or b"{}")
+            except ValueError:
+                body = None
+            action = db_section.text_of(body, "action") if isinstance(body, dict) else ""
+            if action in db_section.CHANGES:
+                plugin = db_section.text_of(body, "plugin")
+                return self._json({"error": f"{ELSEWHERE[0].upper()}{ELSEWHERE[1:]}: {front.name} changes no instance "
+                                            "(the platform is the one writer of instance settings).",
+                                   "platform": platform_page(plugin)}, HTTPStatus.CONFLICT)
+            kept = self.rfile
+            self.rfile = io.BytesIO(data)  # read again by forward, as it came; the connection's own after
+            try:
+                self._proxy(method)
+            finally:
+                self.rfile = kept
 
         def do_POST(self) -> None:
             self._write("POST")

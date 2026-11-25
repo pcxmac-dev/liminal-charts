@@ -648,9 +648,10 @@ A plugin that fails to load is left out and reported (`plugins`), never fatal.
     `own_port`; what an app asks of it is the same for every engine (`instances`, `state`, `test`,
     `new_database`, `connect_to`, `share`, `set_port`, `forget`, `set_credentials`, `status`). They are
     no feeds and no publishers: the Plugins view does not list them; their page is the Databases view
-    (`databases.js`: the Engines at the top of its list, each with its instances, its forms and its API
+    (`databases.js`: the Engines at the top of its list, each with its instances, Test and its API
     card), answered by the integrator (`GET /api/databases/plugins`, `POST /api/databases/instances`:
-    liminal-integrator 1.12.0), which this app's data API leaves to its frame (`_frame_write`). A
+    liminal-integrator 1.12.0), which this app's data API leaves to its frame (`_frame_write`). Since
+    0.2.8 their change forms are the platform's (below, "The charts on the platform core"). A
     plugin written for 2.0 to 2.2 loads unchanged.
   - **2.4** (2026-11-18; the user: "For the integrator, there needs to be a plugin called auditor and it
     will manage the configuration of auditing data", and "an auditor plugin, for auditing sources and
@@ -1166,6 +1167,33 @@ quotes and closes; a broker's account only as `BrokerSnapshot`, an interface wit
   has no executable size; margin asks for the broker's terms, none connected, so the size is indeterminate.
 - **Events** (`GET /v1/events`): every change in order, read from a cursor.
 - The document's return calculations: annualized, real at an assumed inflation, short trades in dollars and percent.
+
+### The charts on the platform core (0.2.8, 2026-11-25; Monday list item 30, step 5)
+
+The user, 2026-11-24: "inheritance bro"; 2026-11-25: the instance forms move to the platform's Databases section, the
+platform the only writer of instance settings, the charts' view keeping its list and linking there, the integrator
+keeping the figures. The design is item-30-design.md in the sessions folder.
+
+- **`ChartsApp(Platform)`** (`frame.py`): the charts app inherits liminal-libs 1.90.0's platform core
+  (`liminal_libs.apps.platform.Platform`), not the whole liminal-platform app: no machine plugins, terminals or
+  sweeps, and no liminal-platform package. `PLATFORM_NEEDS = ("database",)`; it is not the writer
+  (`PLATFORM_WRITER = False`). Its Databases routes read: `GET /api/databases/plugins` (each plugin's `can` all false,
+  its `why` "change this on the platform's Databases section"), and `POST /api/databases/instances` for a test; a
+  change (new, connect, share, port, credentials, forget) answers 409 with those words before anything is read. Alone
+  (`gui --alone`) these are what the data API's frame answers; behind the front they are the integrator's.
+- **The front** (`gui/front.py`) reads a database plugin's form before passing it on: a test goes to the integrator
+  with its body as it came; a change is refused there (409, the words and `platform`, the platform's page for the
+  plugin: `platform_page`, `/platform/#sqlite`), whichever integrator answers, so none reaches one from before step 4.
+- **The Databases view** (`static/databases.js`) keeps its list (the Engines, then the data folder's databases), the
+  figures (sizes, growth, rows, tables, a feed's months, MongoDB's collections) and each plugin's instances. Test stays,
+  a read. The change forms are gone: each plugin's page links the platform's page for it, its Main, External API and
+  Internal API tabs (`/platform/#<plugin>`, `#<plugin>/external`, `#<plugin>/internal`, liminal-platform 0.36.0), with
+  the words "change this on the platform's Databases section", and each instance a "Change…" link there. A link opens
+  in the bound view when the platform's tray is on the rail (`Views.bound`, panels.js: the icon bridge), else as a
+  link; the integrator's own page links no platform (its words alone), unless the answer names one (`platform`).
+  No form of the charts posts an instance change (`tests/test_databases_on_platform.py`).
+- Across processes nothing new: the front still links the platform at `/platform/` over HTTP for its pages; a change is
+  the platform's page's, which is the one writer. The library's `change_on_platform` (liminal-net) is not used here.
 
 ## State (2026-10-24)
 

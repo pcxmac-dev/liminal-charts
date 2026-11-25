@@ -271,7 +271,7 @@
   }
 
   window.Views = { list: () => RAIL_VIEWS.map(([name, title, ic]) => ({ name, title, icon: ic, on: viewOn(name), fixed: FIXED.has(name) })),
-                   on: viewOn, set: setViewOn, redraw, patch, letGo, ownScroll, ownPlace, softKeyboard, reveal };
+                   on: viewOn, set: setViewOn, redraw, patch, letGo, ownScroll, ownPlace, softKeyboard, reveal, bound: openBound };
 
   // -- rail --------------------------------------------------------------------------------
   function showPane(name, { toggle = true } = {}) {
@@ -403,6 +403,15 @@
     if ((f.dataset.item || '') === item) return;
     f.dataset.item = item;
     try { f.contentWindow.location.hash = hash || '#'; } catch (e) { f.src = src; }  // the same page at another plugin
+  }
+  // A linked app's page opened at one of its items from another view (0.2.8: the Databases view's links into the
+  // platform's Databases section, #sqlite/external): in the bound view, as its tray's icons open it, when that app's
+  // tray is on the rail; false when it is not (the caller's link then opens as a link)
+  function openBound(app, item) {
+    if (!BOUND.has(app)) return false;
+    BOUND_ITEM[app] = String(item || '');
+    showPane(`bound-${app}`, { toggle: false });
+    return true;
   }
   window.addEventListener('liminal:theme', () => {  // the bound page shown since: painted again in place (same origin)
     try { document.getElementById('boundFrame').contentWindow?.LiminalTheme?.apply(state.theme); } catch (e) { /* not loaded */ }

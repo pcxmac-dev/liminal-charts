@@ -5,13 +5,21 @@ their API"): what holds the plugins the charts app runs with and its login, the 
 interface they read their keys through (`self.login.key(self.name)`). The page and the data API are still
 gui/server.py's (ChartApp) and the front gui/front.py's; the App base takes the server over at 0.3.0.
 Alone (gui --alone) the charts app holds every plugin the registry loaded, as the super app; behind the
-front, the integrator holds the stock-data plugins in its own process (liminal_integrator.app)."""
+front, the integrator holds the stock-data plugins in its own process (liminal_integrator.app).
+
+0.2.8 (Monday list item 30, step 5; the user, 2026-11-24: "inheritance bro"; 2026-11-25: the instance forms move to the
+platform's Databases section, the platform the only writer of instance settings): ChartsApp inherits the library's
+platform core (liminal_libs.apps.platform.Platform, liminal-libs 1.90.0), not the whole liminal-platform app. It needs
+the database plugins (PLATFORM_NEEDS) and is not the writer: its Databases routes read (GET /api/databases/plugins, a
+test through POST /api/databases/instances) and a change is refused, "change this on the platform's Databases
+section" (409). Machines and AI stay the running platform's, linked at /platform/ by the front."""
 from __future__ import annotations
 
-from liminal_libs.apps import App, EnvironmentLogin, Login, attach_registry
+from liminal_libs.apps import EnvironmentLogin, Login, attach_registry
+from liminal_libs.apps.platform import Platform
 
 
-class ChartsApp(App):
+class ChartsApp(Platform):
     NAME = "charts"
     TITLE = "Liminal Charts"
     ICON = "disk"  # the symbol's disk at the top of the rail (icons.js)
@@ -23,6 +31,9 @@ class ChartsApp(App):
     # LIMINAL_LOGIN_URL's, as when the login was an app the front bound at its address
     LOGIN, LOGIN_VAR = True, "LIMINAL_CHARTS_LOGIN"
     LOGIN_URL_VAR = "LIMINAL_LOGIN_URL"
+    # the platform part it inherits (0.2.8): the database plugins, read here; never the writer of their instance settings
+    PLATFORM_NEEDS = ("database",)
+    PLATFORM_WRITER = False
 
     def __init__(self, log=print, login: Login | None = None):
         # The user environment variables stand in for a login session until the app holds one of its own
