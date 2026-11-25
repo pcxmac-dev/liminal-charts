@@ -3670,6 +3670,9 @@ const layout = {
   max: 5,
   dirty: false,
   generation: 0,  // changes counted by markDirty: a save leaves the layout clean only if none came since
+  saving: null,  // the save on its way (a promise settled once its answer is in), else null: one at a time
+  queued: null,  // the save waiting for it: every ask meanwhile shares this one
+  again: null,  // that save's options
   autosave: prefs.get('autosave', true),
   timer: null,
 };
@@ -3797,7 +3800,12 @@ function markDirty() {
 // server's name and time taken. It is clean only if nothing changed since the snapshot.
 const KEEPALIVE_MAX = 60 * 1024;  // the browser's 64 KiB for a request that outlives the page, less the headers
 
+// One save at a time (the review of 2026-11-21, item 26): two saves on their way at once (the autosave, Ctrl+S,
+// the page hidden) could land out of order, the older snapshot last, so the server kept the older drawings while
+// the page showed itself clean. A save asked while one is on its way waits for its answer, then sends the newest
+// snapshot; every ask meanwhile shares that one save (saveAfterThis).
 async function saveLayout({ leaving = false } = {}) {
+  if (layout.saving) return saveAfterThis(leaving);
   const target = layout.current;
   if (!target) return;
   clearTimeout(layout.timer);
@@ -3807,16 +3815,36 @@ async function saveLayout({ leaving = false } = {}) {
   const keepalive = leaving && new TextEncoder().encode(JSON.stringify(body)).length <= KEEPALIVE_MAX;
   layout.sent = gen;  // on its way: leaving the page does not send it again
   let saved;
+  let answered;
+  layout.saving = new Promise((resolve) => { answered = resolve; });
   try {
     saved = await apiWrite('PUT', `/api/layouts/${target.id}`, body, { keepalive });
   } catch (err) {
     if (layout.sent === gen) layout.sent = null;
     throw err;
+  } finally {
+    layout.saving = null;
+    answered();  // the save waiting runs after the lines below have taken this one as clean or not
   }
   Object.assign(target, { name: saved.name, updated_at: saved.updated_at });
   if (layout.current === target && layout.generation === gen) layout.dirty = false;
   renderLayoutButton();
   await refreshLayoutList();
+}
+
+// The save asked while one is on its way: after it, with the snapshot of then, once for all the asks meanwhile;
+// none when that one left the layout clean (nothing changed since its snapshot).
+function saveAfterThis(leaving) {
+  layout.again = { leaving: leaving || !!layout.again?.leaving };
+  if (!layout.queued) {
+    layout.queued = layout.saving.then(() => {
+      const again = layout.again;
+      layout.again = layout.queued = null;
+      if (!layout.dirty) return undefined;
+      return saveLayout(again);
+    });
+  }
+  return layout.queued;
 }
 
 async function refreshLayoutList() {

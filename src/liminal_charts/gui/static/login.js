@@ -47,7 +47,17 @@
     } catch (e) { return null; }
   }
 
-  async function openAs(name) {
+  // One opening at a time (the review of 2026-11-21, item 26): the login page held here may say "signed in" more
+  // than once (and start() may be opening already), and each ran its own look-up, so two found no profile and both
+  // made one, the second refused as a profile of that name. A second ask while one is under way shares it (one that
+  // went through is followed by the page loading again); a failed one lets the next try again.
+  let opening = null;
+  function openAs(name) {
+    if (!opening) opening = openProfile(name).catch((err) => { opening = null; throw err; });
+    return opening;
+  }
+
+  async function openProfile(name) {
     // your profile, by your account name: found, else made; then the app
     const res = await fetch('/api/profiles');
     const { profiles = [] } = await res.json();

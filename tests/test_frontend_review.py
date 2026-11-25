@@ -749,3 +749,41 @@ def test_all_data_and_the_indicators_are_preferences():
     assert "[['On price', MAIN_INDICATORS], ['Below price', SUB_INDICATORS]]" in prefs
     assert "const cb = $('indMenu').querySelector(`input[data-ind=\"${CSS.escape(e.target.dataset.ind)}\"]`);" in prefs
     assert "window.addEventListener('liminal:indicators', again);" in prefs and "window.addEventListener('liminal:unfiltered', again);" in prefs
+
+
+# -- the review of 2026-11-21, item 26: saves out of order, a profile made twice -------------------------
+
+def test_one_layout_save_at_a_time_the_newest_sent_after_the_one_on_its_way():
+    """Two saves on their way at once could land out of order, the older snapshot last: now a save asked while one
+    is on its way waits for its answer and then sends the newest snapshot, once for every ask meanwhile, and none
+    when the first left the layout clean."""
+    app = _js("app.js")
+    fields = app.split("const layout = {", 1)[1].split("};", 1)[0]
+    assert "saving: null," in fields and "queued: null," in fields and "again: null," in fields
+    save = _function(app, "saveLayout")
+    assert save.index("if (layout.saving) return saveAfterThis(leaving);") < save.index("const gen = layout.generation;") \
+        < save.index("target.data = snapshot();")  # the snapshot taken only when it is this save's turn
+    assert save.index("layout.saving = new Promise((resolve) => { answered = resolve; });") < save.index("await apiWrite('PUT'")
+    after_answer = save.split("} finally {", 1)[1]
+    # the waiting save is let go only after this one is taken as clean or not, for the generation it carried
+    assert after_answer.index("layout.saving = null;") < after_answer.index("answered();") \
+        < after_answer.index("if (layout.current === target && layout.generation === gen) layout.dirty = false;")
+    after = _function(app, "saveAfterThis")
+    assert "layout.again = { leaving: leaving || !!layout.again?.leaving };" in after
+    assert after.index("if (!layout.queued) {") < after.index("layout.queued = layout.saving.then(() => {")
+    assert after.index("layout.again = layout.queued = null;") < after.index("if (!layout.dirty) return undefined;") \
+        < after.index("return saveLayout(again);")
+    assert after.rstrip().endswith("return layout.queued;")  # every ask meanwhile shares the one save
+
+
+def test_one_sign_in_opens_its_profile_once():
+    """The login page held on the sign-in page may say "signed in" more than once, and each ran its own look-up, so
+    two found no profile and both made one: now one opening at a time, a second ask sharing it."""
+    login = _js("login.js")
+    assert "let opening = null;" in login
+    open_as = _inner(login, "openAs")
+    assert "if (!opening) opening = openProfile(name).catch((err) => { opening = null; throw err; });" in open_as
+    assert open_as.rstrip().endswith("return opening;")
+    assert "post('/api/profiles', { name })" in _inner(login, "openProfile")
+    assert login.count("openProfile(") == 2  # its definition and openAs: nothing else goes around the guard
+    assert "openAs(e.data.name).catch(failed)" in login and "await openAs(st.name);" in login
