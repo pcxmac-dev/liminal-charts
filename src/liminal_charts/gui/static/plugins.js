@@ -68,7 +68,8 @@
     const [n, s] = r;
     return Math.abs(s - 3600) < 120 ? `${num(n)} an hour` : Math.abs(s - 60) < 5 ? `${num(n)} a minute` : `${num(n)} per ${num(s)} s`;
   };
-  const ENGINES = { sqlite: 'SQLite', duckdb: 'DuckDB', parquet: 'Parquet', mongodb: 'MongoDB', files: 'files' };
+  const ENGINES = { sqlite: 'SQLite', duckdb: 'DuckDB', parquet: 'Parquet', mongodb: 'MongoDB', files: 'files',
+    postgres: 'PostgreSQL', mariadb: 'MariaDB' };
   const size = (n) => {
     let v = n, i = 0;
     while (v >= 1024 && i < 5) { v /= 1024; i++; }
@@ -568,9 +569,19 @@
     }
     if (r.type === 'documents') {
       const c = r.counts || {};
-      return Object.entries(c).map(([e, n]) => `${esc(ENGINES[e] || e)}: ${n == null ? '<span class="p-muted">not running</span>' : num(n)}`).join(' · ');
+      return Object.entries(c).map(([e, n]) => `${esc(storeTitle(r, e))}: ${n == null ? `<span class="p-muted">${e.includes(':') ? 'not answering' : 'not running'}</span>` : num(n)}`).join(' · ');
     }
     return '';
+  }
+
+  // A store by its name: a bare engine's title, or an instance the user added as engine:instance with its title (0.2.9,
+  // Monday list item 10: a pick naming an instance, liminal-libs 1.91.0 stores.py)
+  function storeTitle(r, name) {
+    const e = (r.engines || []).find((x) => x.name === name);
+    if (e) return e.title;
+    const i = (r.instances || []).find((x) => x.name === name);
+    if (i) return `${i.engineTitle} ${i.name}${i.title && i.title !== i.instance ? ` (${i.title})` : ''}`;
+    return ENGINES[name] || name;
   }
 
   function storesHtml(name) {
@@ -584,12 +595,21 @@
     const rows = got.stores.map((r) => {
       const opts = [`<option value=""${r.picked ? '' : ' selected'}>Optimal: ${esc(ENGINES[r.optimal] || r.optimal)}</option>`,
         ...r.engines.map((e) => `<option value="${esc(e.name)}"${r.picked === e.name ? ' selected' : ''}${e.ok ? '' : ' disabled'}>${esc(e.title)}${e.ok ? '' : ` (${esc(e.why)})`}</option>`)];
-      const title = (e) => r.engines.find((x) => x.name === e)?.title || ENGINES[e] || e;
-      const means = r.engines.find((e) => e.name === r.effect)?.means || '';
-      const single = r.engines.length < 2;
+      // the instances added on the platform's Databases section that can hold it, as engine:instance with their titles
+      const named = r.instances || [];
+      if (named.length) {
+        opts.push(`<optgroup label="Instances you added">${named.map((i) => `<option value="${esc(i.name)}"${r.picked === i.name ? ' selected' : ''}${i.ok ? '' : ' disabled'}>${esc(i.name)} · ${esc(i.title)}${i.ok ? '' : ` (${esc(i.why)})`}</option>`).join('')}</optgroup>`);
+      }
+      if (r.picked && r.picked.includes(':') && !named.some((i) => i.name === r.picked)) {
+        opts.push(`<option value="${esc(r.picked)}" selected disabled>${esc(r.picked)} (${esc(r.refused || 'not found here')})</option>`);
+      }
+      const title = (e) => storeTitle(r, e);
+      const means = r.engines.find((e) => e.name === r.effect)?.means || named.find((i) => i.name === r.effect)?.means || '';
+      const single = r.engines.length < 2 && !named.length;
       return `<tr><td><b>${esc(r.title)}</b></td>
         <td>${single ? esc(r.engines[0].title) : `<select class="pl-store" data-store-plugin="${esc(name)}" data-store-type="${esc(r.type)}"${off}>${opts.join('')}</select>`}</td>
         <td>${esc(title(r.effect))}${r.wanted !== r.effect ? ` <span class="warn">moving to ${esc(title(r.wanted))}</span>` : ''}
+          ${r.refused ? `<div class="warn small">${esc(r.refused)}</div>` : ''}
           <div class="p-muted small">${esc(means)}</div></td>
         <td class="small">${storeHeld(r)}</td></tr>`;
     }).join('');
@@ -599,15 +619,17 @@
       : `MongoDB ${esc(m.version)}: not running (the app starts it when a store uses it)`;
     return `<h4>Stores</h4><table class="act-table ex-mini pl-stores"><thead><tr><th>Data</th><th>Store</th><th>In use</th><th>Held</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="p-muted small">${got.stores.filter((r) => r.engines.length > 1).map((r) => `${esc(r.title)}: ${esc(ENGINES[r.engines[0].name])} is optimal for ${esc(r.why)}.`).join(' ')}
-        A store left keeps its copy. SQLite ${esc(got.engines.sqlite)} · DuckDB ${got.engines.duckdb ? esc(got.engines.duckdb) : 'not installed'} · ${mongo}.</div>`;
+        A store left keeps its copy.${got.stores.some((r) => r.moves) ? ` ${esc(got.stores.find((r) => r.moves).moves)}` : ''} SQLite ${esc(got.engines.sqlite)} · DuckDB ${got.engines.duckdb ? esc(got.engines.duckdb) : 'not installed'} · ${mongo}.</div>`;
   }
 
   async function chooseStore(select) {
     const p = data.plugins.find((x) => x.name === select.dataset.storePlugin) || pubNamed(select.dataset.storePlugin);
     const type = select.dataset.storeType, engine = select.value || null;
     const row = storeState.data?.stores.find((r) => r.type === type);
-    const to = ENGINES[engine || row?.optimal] || engine;
-    const ask = type === 'bars'
+    const to = row ? storeTitle(row, engine || row.optimal) : (ENGINES[engine] || engine);
+    const ask = engine && engine.includes(':')
+      ? `Write ${p.title}'s new ${row?.title.toLowerCase() || type} to ${to} from now? Nothing is moved: what the store in use holds stays where it is, and is still read with them.`
+      : type === 'bars'
       ? (to === 'DuckDB' ? `Keep ${p.title}'s closed months in DuckDB? The hourly sync copies a few a run, newest first, each checked; SQLite keeps every bar.`
         : `Read ${p.title}'s bars from SQLite alone? The DuckDB files stay until you remove them.`)
       : `Keep ${p.title}'s ${row?.title.toLowerCase() || type} in ${to}? They are copied there now and counted, then read and written there; the store left keeps its copy.`;

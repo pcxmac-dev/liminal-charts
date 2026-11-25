@@ -635,7 +635,9 @@ def cmd_mongo(args, settings: Settings) -> int:
 
 def cmd_stores(args, settings: Settings) -> int:
     """Each plugin's stores by data type (stores.py): `list`; `pick PLUGIN TYPE ENGINE` (auto: the
-    optimal); `settle`: move documents to the store wanted now (as the hourly sync does)."""
+    optimal; 0.2.9: ENGINE may name an instance added on the platform's Databases section, engine:instance,
+    postgres:main, which moves nothing: new documents go there from now); `settle`: move documents to the store
+    wanted now (as the hourly sync does)."""
     from liminal_libs import gov, stores
     from liminal_libs.sources.registry import plugin_of, providers, publisher_of, publishers
 
@@ -644,7 +646,13 @@ def cmd_stores(args, settings: Settings) -> int:
             if not (args.plugin and args.type and args.engine):
                 print("pick needs PLUGIN TYPE ENGINE (ENGINE: auto for the optimal)")
                 return 2
-            stores.pick(store, args.plugin, args.type, None if args.engine == "auto" else args.engine)
+            try:
+                stores.pick(store, args.plugin, args.type, None if args.engine == "auto" else args.engine)
+            except stores.PickRefused as e:  # an instance that cannot be used, in words (0.2.9)
+                print(f"{args.plugin}'s {args.type} stay where they are: {e}")
+                return 2
+            if stores.is_named(stores.picked(store, args.plugin, args.type)):
+                print(f"{args.plugin}'s new {args.type} go to {args.engine} from now: {stores.NAMED_MOVES}")
         gdb = gov.open_db(settings.db_path)
         try:
             if args.action in ("pick", "settle"):
@@ -655,10 +663,11 @@ def cmd_stores(args, settings: Settings) -> int:
                                   + [n for n in publishers() if publisher_of(n) == n])
             for name in names:
                 for r in stores.plugin_stores(store, name, gdb.conn):
-                    t = stores.ENGINE_TITLES
-                    print(f"{name:12} {r['title']:10} {t[r['effect']]:8}"
-                          + (f" (moving to {t[r['wanted']]})" if r["wanted"] != r["effect"] else "")
-                          + (" picked" if r["picked"] else f" optimal here: {t[r['optimal']]}"))
+                    t = stores.title_of
+                    print(f"{name:12} {r['title']:10} {t(r['effect']):8}"
+                          + (f" (moving to {t(r['wanted'])})" if r["wanted"] != r["effect"] else "")
+                          + (" picked" if r["picked"] else f" optimal here: {t(r['optimal'])}")
+                          + (f" (refused: {r['refused']})" if r.get("refused") else ""))
         finally:
             gdb.close()
     return 0
@@ -2154,7 +2163,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", nargs="?", default="list", choices=["list", "pick", "settle"])
     s.add_argument("plugin", nargs="?")
     s.add_argument("type", nargs="?", help="bars, documents, series or files")
-    s.add_argument("engine", nargs="?", help="sqlite, duckdb, mongodb, files, or auto")
+    s.add_argument("engine", nargs="?", help="sqlite, duckdb, mongodb, files, or auto; or an instance added on the "
+                                             "platform's Databases section, engine:instance (postgres:main)")
     s.set_defaults(func=cmd_stores)
 
     s = sub.add_parser("datasets", help="research datasets: list, fetch (or refresh), show NAME [SERIES]")

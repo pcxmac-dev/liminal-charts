@@ -1195,6 +1195,26 @@ keeping the figures. The design is item-30-design.md in the sessions folder.
 - Across processes nothing new: the front still links the platform at `/platform/` over HTTP for its pages; a change is
   the platform's page's, which is the one writer. The library's `change_on_platform` (liminal-net) is not used here.
 
+### A store's pick naming an instance (0.2.9, 2026-11-25; Monday list item 10, item 30's step 7)
+
+On liminal-libs 1.91.0 (stores.py): a plugin's Store pick may name an instance added on the platform's Databases
+section, `engine:instance` (`postgres:main`, `mariadb:docs`, a SQLite file, a MongoDB server), and new documents are
+written there through its plugin's `open`, in this process. A bare engine is today's store, unchanged.
+
+- **The Store picker** (`static/plugins.js` `storesHtml`): the bare engines as before, then "Instances you added": each
+  instance that can hold the type, as engine:instance with its title (`instances` of `/api/plugin-stores`), one that
+  cannot be used here disabled with why (its driver missing). A pick that cannot be used now is shown with its words
+  (`refused`). Under the table: a pick naming an instance moves nothing; new documents go there from now, and what
+  the store left holds stays where it is (read with them from the SQLite file's copy). The question before a pick says
+  the same.
+- **`POST /api/plugins/store`** takes `engine:instance` as `engine`; an instance not there, its plugin not installed,
+  one holding something else or its driver missing is a 409 in words (`stores.PickRefused`), never another store.
+- **The commands**: `stores pick PLUGIN documents postgres:main` (refused in words, exit 2); `stores` lists each
+  store by its words (`stores.title_of`: PostgreSQL main).
+- Where documents are written and read (gov.py, the main file's news) is the library's: the chart app's recorder and
+  the sync's extras open the instance through the plugin as the integrator does, with the login every plugin is lent
+  where no app attached it.
+
 ## State (2026-10-24)
 
 Already separated: data sources behind one interface (`sources/`), coverage planning

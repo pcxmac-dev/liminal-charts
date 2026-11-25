@@ -1604,7 +1604,10 @@ class ChartApp:
         2026-10-31: "lets have a 'store' picker so i can choose manually, but lets try to use the
         optimal data store for the data type". Documents move at once (copied, counted, then used
         there: MongoDB started if it is the one); bars a few closed months each hour (the sync's
-        `history run`). Nothing is removed from the store left."""
+        `history run`). Nothing is removed from the store left. 0.2.9 (Monday list item 10): `engine` may name an
+        instance added on the platform's Databases section (engine:instance, postgres:main): refused in words
+        (stores.PickRefused, a ValueError: 409) unless it can be used here, and nothing moves: new documents go there
+        from now, what the store left holds stays where it is."""
         from liminal_libs import stores
         from liminal_libs.storage import Store
 

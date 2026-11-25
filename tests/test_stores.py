@@ -322,6 +322,38 @@ def test_the_page_has_the_store_picker():
     assert "'/api/plugins/store'" in js and "/api/plugin-stores?name=" in js
 
 
+def test_the_picker_offers_the_instances_and_says_nothing_moves():
+    """0.2.9 (Monday list item 10): the instances added on the platform's Databases section, as engine:instance with
+    their titles, after the bare engines; a pick naming one asked as a write from now that moves nothing."""
+    js = (Path(__file__).resolve().parents[1] / "src/liminal_charts/gui/static/plugins.js").read_text(encoding="utf-8")
+    assert '<optgroup label="Instances you added">' in js and "${esc(i.name)} · ${esc(i.title)}" in js
+    assert "function storeTitle(r, name)" in js and "r.refused" in js and "got.stores.find((r) => r.moves).moves" in js
+    assert "Nothing is moved: what the store in use holds stays where it is" in js
+    assert "postgres: 'PostgreSQL', mariadb: 'MariaDB'" in js
+
+
+def test_a_pick_naming_an_instance_that_cannot_be_used_is_refused_in_words(tmp_path, monkeypatch, capsys):
+    from liminal_charts import cli
+    from liminal_charts.gui.server import ChartApp
+    from liminal_libs.config import load_settings
+
+    main = tmp_path / "liminal.db"
+    monkeypatch.setenv("LIMINAL_DB", str(main))
+    assert cli.main(["stores", "pick", "massive", "documents", "postgres:nowhere"]) == 2
+    out = capsys.readouterr().out
+    assert out.startswith("massive's documents stay where they are: PostgreSQL has ")  # no such instance, or no plugin
+    with Store(main, check_same_thread=False) as store:
+        assert stores.picked(store, "massive", "documents") is None
+        app = ChartApp(store, settings=load_settings(env={"LIMINAL_DB": str(main)}, env_file=None))
+        with pytest.raises(ValueError, match="PostgreSQL has"):  # the route's 409, in these words
+            app.set_store("massive", "documents", "postgres:nowhere")
+        with pytest.raises(ValueError, match="PostgreSQL has no store of its own here"):
+            app.set_store("massive", "documents", "postgres")
+        row = app.plugin_stores("massive")["stores"][1]
+        assert [e["name"] for e in row["engines"]] == ["mongodb", "sqlite"] and isinstance(row["instances"], list)
+        assert "moves nothing" in row["moves"] and row["effect"] == "sqlite"
+
+
 def test_the_hourly_sync_starts_a_history_run(tmp_path, monkeypatch):
     from liminal_charts import cli
     from liminal_libs.config import load_settings
