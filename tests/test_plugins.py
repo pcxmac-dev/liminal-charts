@@ -393,7 +393,7 @@ def test_the_plugins_view_shows_each_plugins_version_and_origin(tmp_path):
     assert out["api"] == registry.PLUGIN_API
     assert {(p["version"], p["api"], p["origin"]) for p in out["plugins"] if not p.get("ai")} == {  # the feeds (the AI assistants aside)
         *((v, a, f"package: plugin-integrator-{registry.plugin_of(n)} ({e})") for n, (v, a, e) in PACKAGED.items())}
-    assert {(p["version"], p["api"]) for p in out["publishers"]} == {("0.3.0", "2.2")}
+    assert {(p["version"], p["api"]) for p in out["publishers"]} == {("0.3.0", "2.2"), ("0.3.1", "2.2")}  # Massive's headlines 0.3.1
 
 
 def test_unknown_providers_are_refused_by_name():
