@@ -164,20 +164,30 @@ def symbol_rows(store: Store, settings: Settings, source: str, now: datetime, cu
     paused = collector.updates_pause(store, now)
     picked = collector.picked_symbols(store, now) if paused else set()
     rows, items = [], []
-    for item in store.watchlist(source):
+    # Each kind of fact read once for all of the feed's symbols, a few statements whatever their number
+    # (Monday list item 16, 2026-11-24): read a symbol at a time they were about seven statements each,
+    # some 230,000 for 33,145 symbols, 11 s on Windows and two minutes from Linux, where each crosses the link.
+    watch = store.watchlist(source)
+    rolls = store.rolls_of(source) if any(i["asset"] == "future" for i in watch) else {}
+    contracts_of = {i["source_ticker"]: {t for _, t in rolls.get(i["source_ticker"], ())}  # source_ticker = product
+                    for i in watch if i["asset"] == "future"}
+    plain = [i["ticker"] for i in watch if i["asset"] != "future"]
+    edges_of = store.bar_edges_many(source, plain + sorted({t for c in contracts_of.values() for t in c}))
+    newest_of = store.newest_many(plain, "minute", holders)
+    probes = store.probes(source)
+    for item in watch:
         floor = history_floor(settings.tier, today, item["asset"])
         if item["asset"] == "future":
-            contracts = {t for _, t in store.rolls(source, item["source_ticker"])}  # source_ticker = product
-            spans = [e for e in (store.bar_edges(source, t) for t in contracts) if e]
+            spans = [e for e in (edges_of.get(t) for t in contracts_of[item["source_ticker"]]) if e]
             edges = (min(e[0] for e in spans), max(e[1] for e in spans)) if spans else None
         else:
-            edges = store.bar_edges(source, item["ticker"])
-        newest = store.newest_any(item["ticker"], "minute", holders) if item["asset"] != "future" else None
+            edges = edges_of.get(item["ticker"])
+        newest = newest_of.get(item["ticker"]) if item["asset"] != "future" else None
         horizon = now if item["ticker"] in live_too else \
             freshness.history_horizon(freshness.hours(source, item["asset"]), settings.tier, now,
                                       item.get("exchange") if item["asset"] == "stock" else None)
         row = symbol_status(item, edges, floor, today, now, settings.tier, current,
-                            store.probe(source, item["ticker"]), newest[1] if newest else None,
+                            probes.get(item["ticker"].upper()), newest[1] if newest else None,
                             per_request, horizon=horizon)
         if item.get("closed_at"):
             row.update(state="closed", requestsLeft=0, progress=1.0, note="archive complete: not asked again")
