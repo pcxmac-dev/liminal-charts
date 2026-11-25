@@ -26,12 +26,18 @@ class Served:
     """A host served in a thread: its work waits for stop; what happened, in order."""
 
     def __init__(self, name, db, **kw):
-        self.host = Host(name, db, log=lambda m: self.events.append(m), **kw)
         self.events: list[str] = []
         self.order: list[str] = []
+        self._up = threading.Event()  # set by its "up" line (or its end): a wait on it, not a 5 s deadline (CI, 2026-11-24)
+        self.host = Host(name, db, log=self._log, **kw)
         self.thread = threading.Thread(target=self._serve, daemon=True)
         self.thread.start()
         self._wait_listening()
+
+    def _log(self, m):
+        self.events.append(m)
+        if m.startswith(f"host {self.host.name}: up for "):  # said once it listens and its accept loop runs
+            self._up.set()
 
     def _serve(self):
         def work(stop):
@@ -40,13 +46,14 @@ class Served:
 
         def secure():
             self.order.append("secured")
-        self.host.serve(work, secure, handle=lambda q: {"answer": q.get("what"), "clients": self.host.clients()})
+        try:
+            self.host.serve(work, secure, handle=lambda q: {"answer": q.get("what"), "clients": self.host.clients()})
+        finally:
+            self._up.set()
 
-    def _wait_listening(self):
-        end = time.monotonic() + 5
-        while self.host._listener is None and time.monotonic() < end:
-            time.sleep(0.01)
-        assert self.host._listener is not None
+    def _wait_listening(self, within=60.0):
+        assert self._up.wait(within), f"the host never said it was up within {within:g} s: {self.events}"
+        assert self.host._listener is not None and any(" up for " in m for m in self.events), self.events
 
     def ended(self, within=5.0) -> bool:
         self.thread.join(within)

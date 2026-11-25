@@ -108,15 +108,36 @@ def test_the_keeper_ends_when_the_server_is_gone_and_runs_nothing_it_cannot_star
     events: list[str] = []
     monkeypatch.setattr(cli, "Logger", lambda path: events.append)
     monkeypatch.setattr(mongo, "binary", lambda: tmp_path / "mongod.exe")
-    monkeypatch.setattr(mongo, "KEEP_SECONDS", 0.05)  # heard when keep runs (liminal-libs 1.88.1)
-    monkeypatch.setattr(mongo, "GONE_GRACE_S", 0.1)  # 1.87.0: gone after 3 failed pings over this, not one
     monkeypatch.setattr(mongo, "start", lambda data_dir, wait_s=20.0: None)  # one was running already: adopted
     monkeypatch.setattr(mongo, "running", lambda timeout_ms=500: False)  # ... and then it went (mongo stop)
     monkeypatch.setattr(mongo, "stop", lambda: events.append("stop asked") or False)
+    # no real time (CI windows-3.12 missed a real 0.05 s look against a real 0.1 s grace): the keeper's clock is a
+    # stand-in that its stop's wait moves on by each look, so it pings GONE_PINGS times over GONE_GRACE_S in order
+    monkeypatch.setattr(mongo, "GONE_GRACE_S", 2.0)  # 1.87.0: gone after 3 failed pings over this, not one
+    now = [0.0]  # a look each 1.0: misses at 1, 2 and 3, the third 2.0 after the first
+
+    class StandInStop:
+        def __init__(self):
+            self.waits = 0
+
+        def wait(self, timeout=None):
+            self.waits += 1
+            assert self.waits < 1000, "the keeper never took the server for gone"
+            now[0] += timeout
+            return False  # the clients stay: only the server's going ends the keeper
+
+        def is_set(self):
+            return False
+
+        def set(self):
+            raise AssertionError("the keeper's work set its own stop")
+
+    real_keep = mongo.keep
+    monkeypatch.setattr(mongo, "keep", lambda *a, **kw: real_keep(*a, clock=lambda: now[0], every=1.0, **kw))
 
     class FakeHost:
         def __init__(self, name, db_path, log=print):
-            self.stop = threading.Event()
+            self.stop = StandInStop()
 
         def serve(self, work, secure=None, handle=None):
             work(self.stop)  # returns by itself: the server is gone

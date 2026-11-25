@@ -7,7 +7,6 @@ from __future__ import annotations
 import http.client
 import json
 import threading
-import time
 from dataclasses import replace
 
 from liminal_libs.config import load_settings
@@ -42,15 +41,18 @@ class FakeLink:
         stop.wait()
 
 
-def test_serve_integrator_serves_the_integrators_page_and_the_data_api_in_its_process(tmp_path):
+def test_serve_integrator_serves_the_integrators_page_and_the_data_api_in_its_process(tmp_path, said, join):
     settings = replace(load_settings(env={}, env_file=None), db_path=tmp_path / "liminal.db")
-    link, lines, stop, served = FakeLink(), [], threading.Event(), []
-    threading.Thread(target=lambda: served.append(server.serve_integrator(settings, 0, link=link, log=lines.append, stop=stop,
-                                                                        until_quiet=True)), daemon=True).start()
-    end = time.monotonic() + 5
-    while not (urls := [m for m in lines if m.startswith("integrator: its page and the data API at")]) and time.monotonic() < end:
-        time.sleep(0.02)
-    port = int(urls[0].split("http://127.0.0.1:", 1)[1].split("/", 1)[0])
+    link, log, stop, served = FakeLink(), said("integrator: its page and the data API at"), threading.Event(), []
+
+    def run():
+        try:
+            served.append(server.serve_integrator(settings, 0, link=link, log=log, stop=stop, until_quiet=True))
+        finally:
+            log.ended()
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    port = log.port()  # its ready line waited for, not a deadline (CI windows-3.14, 2026-11-24)
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port)
         conn.request("GET", "/")
@@ -76,9 +78,7 @@ def test_serve_integrator_serves_the_integrators_page_and_the_data_api_in_its_pr
         assert link.quiet_args[0] is stop and link.quiet_args[1] == stop.set  # until quiet: the server ends then
     finally:
         stop.set()
-        end = time.monotonic() + 5
-        while not served and time.monotonic() < end:
-            time.sleep(0.02)
+        join(thread, "the integrator's server")
     assert served == [f"http://127.0.0.1:{port}/"] and link.let == 1  # the fetcher let go with the server
 
 

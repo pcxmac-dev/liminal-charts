@@ -281,7 +281,7 @@ def test_the_front_never_starts_the_integrator_it_links(tmp_path, monkeypatch):
     assert front_mod.integrator_port() == 8785
 
 
-def test_serve_front_refuses_a_taken_port_and_stops_when_told(tmp_path, upstream, monkeypatch):
+def test_serve_front_refuses_a_taken_port_and_stops_when_told(tmp_path, upstream, monkeypatch, said):
     """The library's 1.52.0 (the user, 2026-11-14: "i only want ports for liminal-login ; liminal-platform ;
     liminal-charts ; liminal-integrator"; "never provide ports for anything else"): a front whose port something else
     answers on is not started, nor on another port; on a port of its own it serves until told to stop."""
@@ -297,18 +297,19 @@ def test_serve_front_refuses_a_taken_port_and_stops_when_told(tmp_path, upstream
     assert not any(m.startswith("front: the chart's page at") for m in lines)
     stop = threading.Event()
     done = threading.Event()
+    log = said("front: the chart's page at")  # its ready line waited for, not a 5 s deadline (CI windows-3.14)
 
     def run():
-        front_mod.serve_front(tmp_path / "liminal.db", port=0, open_browser=False, log=lines.append, stop=stop)
-        done.set()
+        try:
+            front_mod.serve_front(tmp_path / "liminal.db", port=0, open_browser=False, log=log, stop=stop)
+        finally:
+            log.ended()
+            done.set()
     threading.Thread(target=run, daemon=True).start()
-    end = time.monotonic() + 5
-    while not (urls := [m for m in lines if m.startswith("front: the chart's page at")]) and time.monotonic() < end:
-        time.sleep(0.02)
-    served = int(urls[0].split("http://127.0.0.1:", 1)[1].split("/", 1)[0])
+    served = log.port()
     assert served != taken and b"<title>Liminal Charts" in _get(served, "/")[1]
     stop.set()
-    assert done.wait(5)
+    assert done.wait(log.BOUND_S), "the front did not end once told"
     assert not web.listening(served)
 
 

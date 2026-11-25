@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import threading
 from datetime import date
 from typing import Iterator
 
@@ -370,3 +371,54 @@ def logins_apart(monkeypatch, tmp_path):
     monkeypatch.setenv("LIMINAL_INTEGRATOR_LOGIN", "none")
     monkeypatch.setenv("LIMINAL_LOGIN_DIR", str(tmp_path / "login"))
     monkeypatch.setenv("LIMINAL_PLATFORM_URL", "none")
+
+
+class Said:
+    """A log stand-in that tells when a server's ready line comes (a line starting with `prefix`). A wait for it blocks
+    on an event that line sets, or the server's end (`ended`), never on a deadline a slow runner can miss (CI
+    windows-3.14, 2026-11-24: a 5 s poll for the URL line ran out and the test failed on an IndexError). Its bound is a
+    last resort only, and it fails with what was said."""
+
+    BOUND_S = 60.0
+
+    def __init__(self, prefix: str):
+        self.prefix, self.lines, self._came = prefix, [], threading.Event()
+
+    def __call__(self, line: str) -> None:
+        self.lines.append(line)
+        if line.startswith(self.prefix):
+            self._came.set()
+
+    def ended(self) -> None:
+        """The server returned (or failed): a wait for its line ends now, and says it never came."""
+        self._came.set()
+
+    def line(self, within: float = BOUND_S) -> str:
+        if not self._came.wait(within):
+            raise AssertionError(f"no line starting {self.prefix!r} within {within:g} s; said: {self.lines}")
+        for m in self.lines:
+            if m.startswith(self.prefix):
+                return m
+        raise AssertionError(f"the server ended before a line starting {self.prefix!r}; said: {self.lines}")
+
+    def port(self, within: float = BOUND_S) -> int:
+        """The port of the URL the ready line names (http://127.0.0.1:<port>/)."""
+        return int(self.line(within).split("http://127.0.0.1:", 1)[1].split("/", 1)[0])
+
+
+@pytest.fixture
+def said():
+    """Said, the log stand-in a test hands a server it serves in a thread, to wait for its ready line."""
+    return Said
+
+
+def joined(thread: threading.Thread, what: str, within: float = Said.BOUND_S) -> None:
+    """A served thread waited for to its end (a bound only as a last resort), failing with what did not end."""
+    thread.join(within)
+    assert not thread.is_alive(), f"{what} did not end within {within:g} s"
+
+
+@pytest.fixture
+def join():
+    """joined, for a test's served thread."""
+    return joined

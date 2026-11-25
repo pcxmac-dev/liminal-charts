@@ -8,7 +8,6 @@ from __future__ import annotations
 import http.client
 import json
 import threading
-import time
 from dataclasses import replace
 
 from liminal_libs.apps import App, EnvironmentLogin
@@ -74,22 +73,25 @@ class Integratorish(App):
         return []
 
 
-def _serve(tmp_path, frame):
+def _serve(tmp_path, frame, said):
+    """The integrator's server in a thread, its ready line waited for (conftest's Said: an event, not a 5 s deadline,
+    which ran out on CI windows-3.14 on 2026-11-24 and failed on an IndexError)."""
     settings = replace(load_settings(env={}, env_file=None), db_path=tmp_path / "liminal.db")
-    link, lines, stop, served = FakeLink(), [], threading.Event(), []
-    threading.Thread(target=lambda: served.append(server.serve_integrator(settings, 0, link=link, log=lines.append, stop=stop,
-                                                                        frame=frame)), daemon=True).start()
-    end = time.monotonic() + 5
-    while not (urls := [m for m in lines if m.startswith("integrator: its page and the data API at")]) and time.monotonic() < end:
-        time.sleep(0.02)
-    return int(urls[0].split("http://127.0.0.1:", 1)[1].split("/", 1)[0]), link, stop, served
+    link, log, stop = FakeLink(), said("integrator: its page and the data API at"), threading.Event()
+
+    def run():
+        try:
+            server.serve_integrator(settings, 0, link=link, log=log, stop=stop, frame=frame)
+        finally:
+            log.ended()
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return log.port(), link, stop, thread
 
 
-def _ended(stop, served):
+def _ended(stop, thread, join):
     stop.set()
-    end = time.monotonic() + 5
-    while not served and time.monotonic() < end:
-        time.sleep(0.02)
+    join(thread, "the integrator's server")
 
 
 def _call(port, method, path, body=None, cookie=None, headers=None):
@@ -104,10 +106,10 @@ def _call(port, method, path, body=None, cookie=None, headers=None):
     return r.status, r.read(), r
 
 
-def test_the_integrators_page_is_its_logins_sign_in_until_signed_in_there(tmp_path, monkeypatch):
+def test_the_integrators_page_is_its_logins_sign_in_until_signed_in_there(tmp_path, monkeypatch, said, join):
     monkeypatch.delenv("LIMINAL_INTEGRATOR_LOGIN", raising=False)
     frame = Integratorish(log=lambda m: None)
-    port, link, stop, served = _serve(tmp_path, frame)
+    port, link, stop, thread = _serve(tmp_path, frame, said)
     try:
         status, body, _ = _call(port, "GET", "/")
         assert status == 200 and b'id="signinFrame"' in body and b'data-mode="fetcher"' not in body  # its sign-in first
@@ -129,20 +131,20 @@ def test_the_integrators_page_is_its_logins_sign_in_until_signed_in_there(tmp_pa
         assert _call(port, "GET", "/api/requests")[0] == 200
         assert frame.login_object().superclass is frame and frame.served == f"http://127.0.0.1:{port}/"
     finally:
-        _ended(stop, served)
+        _ended(stop, thread, join)
     assert frame._login_object is None  # closed with the page's end
 
 
-def test_without_the_integrators_login_its_page_opens_as_before(tmp_path, monkeypatch):
+def test_without_the_integrators_login_its_page_opens_as_before(tmp_path, monkeypatch, said, join):
     monkeypatch.setenv("LIMINAL_INTEGRATOR_LOGIN", "none")
     frame = Integratorish(log=lambda m: None)
-    port, link, stop, served = _serve(tmp_path, frame)
+    port, link, stop, thread = _serve(tmp_path, frame, said)
     try:
         assert b'<body data-mode="fetcher">' in _call(port, "GET", "/")[1]
         assert json.loads(_call(port, "GET", "/api/trays")[1]) == {"trays": []}
         assert _call(port, "GET", "/login/api/status")[0] == 404 and frame.login_object() is None
     finally:
-        _ended(stop, served)
+        _ended(stop, thread, join)
     # the chart app's own page held by the integrator's server (a frame not the integrator's) holds no login here
     from liminal_charts.frame import ChartsApp
 
@@ -150,8 +152,8 @@ def test_without_the_integrators_login_its_page_opens_as_before(tmp_path, monkey
     monkeypatch.setattr(ChartsApp, "LOGIN_CLASS", StandInLogin)
     charts = ChartsApp(log=lambda m: None)
     charts.attach_plugins = lambda only=None: []
-    port, link, stop, served = _serve(tmp_path, charts)
+    port, link, stop, thread = _serve(tmp_path, charts, said)
     try:
         assert b'<body data-mode="fetcher">' in _call(port, "GET", "/")[1] and charts._login_object is None
     finally:
-        _ended(stop, served)
+        _ended(stop, thread, join)
