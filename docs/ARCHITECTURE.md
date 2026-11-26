@@ -1215,6 +1215,36 @@ written there through its plugin's `open`, in this process. A bare engine is tod
   the sync's extras open the instance through the plugin as the integrator does, with the login every plugin is lent
   where no app attached it.
 
+### The charts' own External and Internal API (0.2.10, 2026-11-26; Monday list item 17)
+
+The user, 2026-11-16: "for all apps, and all plugins, there should be an external api tab, and an internal api tab,
+the internal api is for interfaces the plugin shares with the rest of the app, the external should be all the
+SDKs/APIs the plugin associates with"; 2026-11-17: "all plugins all apps". On liminal-libs 1.63.0's model (apis.py,
+internal.py, ui/static/internal.js; GET /api/app/apis), as the platform's page has it.
+
+- **This app**, the first entry of the Plugins view: the charts (on the integrator's own page, the integrator), with
+  External API and Internal API beside its title and its facts in the side column. GET /api/app/apis is answered by
+  the charts app the front holds, as Codebase is; with ?plugin= it is passed on to the integrator.
+- **Every plugin and publisher**: Main | External API | Internal API under its title. Main is the page as before,
+  without the cards at its foot; External API draws them folded; Internal API asks GET /api/app/apis?plugin=NAME
+  (&of=publisher for a publisher, whose name a feed may share) only while it is shown, a minute apart at the most. The
+  data API answers it (`ChartApp.plugin_apis`, `plugins.internal_view`) for every plugin object behind the entry (a
+  feed plugin's feeds then its publishers, a publisher's parts, an assistant the frame has not attached), each made by
+  the frame from the object; nothing of a plugin is called. A name the view has no entry of is the frame's to answer.
+- **The routes** (`gui/routes.py`): behind the front, the charts' Internal API lists the front's (what it answers
+  itself, then each of the frame's routes it passes on to the integrator, in the data API's words where it has a row);
+  alone, the data API's, the platform core's two Databases routes and the frame's three writes the data API answers
+  404. `tests/test_routes.py` holds each table to its chain: a route added without its row fails it.
+- **The cards** (`apis.py`): git (Codebase), SQLite through Python's sqlite3 (the paper account's and the Trading
+  Desk's tables) and Python's signal module (the front's stop), each link one already read for a card that landed,
+  with that card's day. The vendored KLineChart, the sky's and the world's data, WebGL2, Server-Sent Events, pandas
+  and numpy have no card yet: none of their makers' pages was read for one.
+- **CALLS and ATTRIBUTES** (`frame.py`): what the Plugins view calls and reads on a plugin of each kind, held to
+  gui/plugins.py and ChartApp.publishers by a test. The fetching is the library's and is not listed.
+- A server from before is said in words, never an empty tab: a front that passes the question on (the integrator's
+  answer, none of it drawn under the charts' name), an integrator with no route or card of its own, a data API
+  without ?plugin= (404). The integrator's page is read once per process: its entry and tabs come with its restart.
+
 ## State (2026-10-24)
 
 Already separated: data sources behind one interface (`sources/`), coverage planning

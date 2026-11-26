@@ -64,6 +64,50 @@ class ChartsApp(Platform):
         # signed-in user is the design to come).
         super().__init__(log=log, login=login if login is not None else EnvironmentLogin())
 
+    # what the Plugins view's code (gui/plugins.py; a publisher's cards in gui/server.py ChartApp.publishers) calls and
+    # reads on a plugin of each kind, held to those sources by tests/test_api_views.py. The fetching is the library's
+    # (its collector and sourcing): not listed here
+    CALLS = {
+        "feed": {
+            "report": "its report for the view: its plan's limits, capabilities, streams and notes (GET /api/plugins)",
+            "keys_set": "whether its keys are set (never their values), for its state and its Setup",
+            "plan_state": "each plan variable with where it came from, for its Plan",
+            "api_facts": "what it learned of the APIs it attaches to, for its External API (liminal_libs.apis.facts_of)",
+        },
+        "publisher": {
+            "api_facts": "what it learned of the APIs it attaches to, for its External API (liminal_libs.apis.facts_of)",
+        },
+        "assistant": {
+            "own": "its settings here: its plan, model, effort, caps and key",
+            "plan_of": "the plan of its settings, as its vendor's table writes it",
+            "keys_set": "whether its key is set (never its value)",
+            "served": "whether its key reaches the vendor's API on its plan",
+            "plan_state": "each plan variable with where it came from, for its Plan",
+            "free_note": "what its vendor gives free, in words",
+            "table_rows": "its vendor's plans and models as written in, and the day they were verified",
+            "api_facts": "what it learned of the APIs it attaches to, for its External API (liminal_libs.apis.facts_of)",
+        },
+        "auditor": {
+            "api_facts": "what it learned of the APIs it attaches to, for its External API (liminal_libs.apis.facts_of)",
+        },
+    }
+    ATTRIBUTES = {  # read, never called
+        "feed": ("name", "title", "about", "origin", "version", "api", "apis", "signup", "keys", "archival", "kind",
+                 "assets", "keyless", "limits", "has_scan", "plan_note", "options", "plan_choices"),
+        "publisher": ("name", "apis"),
+        "assistant": ("name", "title", "about", "origin", "version", "api", "apis", "signup", "keys", "vendor", "caps",
+                      "default_model", "free_plan", "has_scan", "plan_note", "options", "plan_choices"),
+        "auditor": ("name", "title", "about", "origin", "version", "api", "apis", "options", "plan_choices"),
+    }
+
+    @property
+    def apis(self) -> tuple:
+        """What the charts' own code associates with, for their own External API (apis.py): imported when first
+        asked, so the charts' start loads nothing more for it."""
+        from .apis import APIS
+
+        return APIS
+
     def routes(self) -> tuple:
         """Its own routes as its Internal API lists them (gui/routes.py): behind the front, the front's (what it answers
         itself, then each of the frame's routes it passes on to the integrator); alone, the data API's, the platform

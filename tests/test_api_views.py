@@ -163,3 +163,56 @@ def test_the_page_draws_this_app_first_and_three_tabs_beside_each_plugins_title(
     assert "FETCHER && !(d.internal?.counts?.own > 0) && !(d.apis || []).length" in js
     assert "was started before it could show this plugin's Internal API: restart ${server()} to see it." in js
     assert "if (!(sel === OWN && I) && (!sel" in js  # This app stays picked through the view's refreshes
+
+
+def test_the_charts_cards_are_sound_and_their_links_people_only():
+    from liminal_libs import apis as cards
+
+    from liminal_charts import apis
+    from liminal_charts.frame import ChartsApp
+
+    assert cards.problems(apis.APIS) == []
+    assert ChartsApp(log=lambda m: None).apis is apis.APIS
+    assert [a.name for a in apis.APIS] == ["git", "SQLite, through Python's sqlite3", "Python's signal module"]
+    assert all(a.verified in ("2026-11-16", "2026-11-17", "2026-11-18") for a in apis.APIS)  # the landed cards' days
+
+
+def _named_on(fn_names, source: str, var: str) -> tuple[set, set]:
+    """What the functions named call and read on `var` (a plugin object): `var.x(...)` a call, `var.x` an attribute,
+    facts_of(var) and getattr(var, "x") as the library's helpers read them."""
+    import ast
+
+    calls, attrs = set(), set()
+    for fn in (n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.FunctionDef) and n.name in fn_names):
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == var:
+                    calls.add(node.func.attr)
+                elif node.func.attr == "facts_of":
+                    calls.add("api_facts")
+            if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "getattr" and len(node.args) >= 2 \
+                    and getattr(node.args[0], "id", "") == var and isinstance(node.args[1], ast.Constant):
+                attrs.add(node.args[1].value)
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == var:
+                attrs.add(node.attr)
+    return calls, attrs - calls
+
+
+def test_what_the_charts_say_they_call_and_read_on_a_plugin_is_what_the_plugins_view_does():
+    import inspect
+
+    from liminal_charts.frame import ChartsApp
+    from liminal_charts.gui import server
+
+    source = inspect.getsource(plugins_view)
+    kinds = {"feed": ("view", "_plan", "_options", "_scanning"),
+             "assistant": ("_assistant_entry", "_scanning", "_options", "_ai_limits"),
+             "auditor": ("_auditor_entry", "_options")}
+    for kind, names in kinds.items():
+        calls, attrs = _named_on(names, source, "p")
+        assert set(ChartsApp.CALLS[kind]) == calls, kind
+        assert set(ChartsApp.ATTRIBUTES[kind]) == attrs, kind
+    calls, attrs = _named_on(("publishers",), inspect.getsource(server.ChartApp), "obj")
+    assert set(ChartsApp.CALLS["publisher"]) == calls and set(ChartsApp.ATTRIBUTES["publisher"]) == attrs | {"name"}
+    inner = ChartsApp(log=lambda m: None).internal()
+    assert set(inner["calls"]) == set(ChartsApp.CALLS) and set(inner["attributes"]) == set(ChartsApp.ATTRIBUTES)

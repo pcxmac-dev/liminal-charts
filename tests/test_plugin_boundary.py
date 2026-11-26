@@ -21,6 +21,11 @@ FOR_PEOPLE = {
     ("apps/app.py", "127.0.0.1"), ("apps/login.py", "127.0.0.1"),  # the apps' frame and the login client (liminal-libs 1.7.0)
     ("machines/admin.py", "127.0.0.1"),  # a boot service's own page on this machine (liminal-libs 1.47.0)
     ("stop.py", "127.0.0.1"),  # liminal-signal asking this machine's own apps to stop (liminal-libs 1.86.0)
+    # the charts' own External API (0.2.10, Monday list item 17; the user's yes, 2026-11-24): one pair for each host of
+    # its cards' links, pages for people, never fetched. The key is the path inside its package, so a pair would also
+    # admit the library's own apis.py, which names no host
+    ("apis.py", "git-scm.com"), ("apis.py", "github.com"), ("apis.py", "www.sqlite.org"),
+    ("apis.py", "docs.python.org"), ("apis.py", "man7.org"),
 }
 
 
