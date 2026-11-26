@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import liminal_libs
 
@@ -21,12 +22,42 @@ FOR_PEOPLE = {
     ("apps/app.py", "127.0.0.1"), ("apps/login.py", "127.0.0.1"),  # the apps' frame and the login client (liminal-libs 1.7.0)
     ("machines/admin.py", "127.0.0.1"),  # a boot service's own page on this machine (liminal-libs 1.47.0)
     ("stop.py", "127.0.0.1"),  # liminal-signal asking this machine's own apps to stop (liminal-libs 1.86.0)
-    # the charts' own External API (0.2.10, Monday list item 17; the user's yes, 2026-11-24): one pair for each host of
-    # its cards' links, pages for people, never fetched. The key is the path inside its package, so a pair would also
-    # admit the library's own apis.py, which names no host
-    ("apis.py", "git-scm.com"), ("apis.py", "github.com"), ("apis.py", "www.sqlite.org"),
-    ("apis.py", "docs.python.org"), ("apis.py", "man7.org"),
 }
+
+# the charts' own External API (0.2.10, Monday list item 17; the user's yes, 2026-11-24: "one ('apis.py', host) pair per
+# card link; links for people, never fetched"): one pair for each documentation link of its cards (apis.APIS), by its
+# address. A card's link added, moved or dropped fails test_the_charts_own_cards_links_are_these until it is said here;
+# their hosts are FOR_PEOPLE's for apis.py. The key is the path inside its package, so it would also admit the
+# library's own apis.py, which names no host
+CARD_LINKS = {("apis.py", url) for url in (
+    "https://git-scm.com/docs/", "https://git-scm.com/docs/git", "https://git-scm.com/docs/git-status",
+    "https://git-scm.com/docs/git-log", "https://git-scm.com/docs/git-config", "https://git-scm.com/docs/git-ls-files",
+    "https://git-scm.com/docs/git-fetch", "https://git-scm.com/install/", "https://github.com/git/git",
+    "https://www.sqlite.org/docs.html", "https://docs.python.org/3/library/sqlite3.html",
+    "https://www.sqlite.org/wal.html", "https://www.sqlite.org/changes.html", "https://www.sqlite.org/copyright.html",
+    "https://docs.python.org/3/library/signal.html",
+    "https://docs.python.org/3/library/signal.html#execution-of-python-signal-handlers",
+    "https://man7.org/linux/man-pages/man7/signal.7.html",
+    "https://klinecharts.com/en-US/guide/introduction", "https://klinecharts.com/en-US/api/chart/init",
+    "https://klinecharts.com/en-US/api/chart/registerIndicator", "https://klinecharts.com/en-US/api/chart/registerOverlay",
+    "https://klinecharts.com/en-US/api/chart/registerFigure", "https://klinecharts.com/en-US/api/instance/getDom",
+    "https://github.com/klinecharts/KLineChart",
+    "https://github.com/ofrohn/d3-celestial",
+    "https://github.com/topojson/world-atlas",
+    "https://www.naturalearthdata.com/downloads/10m-cultural-vectors/timezones/",
+    "https://www.naturalearthdata.com/about/terms-of-use/", "https://github.com/nvkelso/natural-earth-vector",
+    "https://www.soest.hawaii.edu/pwessel/gshhg/", "https://www.iana.org/time-zones",
+    "https://developer.mozilla.org/en-US/docs/Web/API/WebGL2RenderingContext",
+    "https://registry.khronos.org/webgl/specs/latest/2.0/",
+    "https://html.spec.whatwg.org/multipage/server-sent-events.html",
+    "https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events",
+    "https://developer.mozilla.org/en-US/docs/Web/API/EventSource",
+    "https://pandas.pydata.org/docs/", "https://pandas.pydata.org/docs/reference/index.html",
+    "https://pandas.pydata.org/docs/user_guide/index.html", "https://pandas.pydata.org/docs/whatsnew/index.html",
+    "https://numpy.org/doc/stable/", "https://numpy.org/doc/stable/reference/index.html",
+    "https://numpy.org/doc/stable/user/index.html", "https://numpy.org/doc/stable/release.html",
+)}
+FOR_PEOPLE |= {(path, urlsplit(url).hostname) for path, url in CARD_LINKS}
 
 
 def sources() -> list[tuple[str, str, Path]]:
@@ -46,6 +77,19 @@ def hosts_named() -> set[tuple[str, str]]:
 def test_no_providers_host_is_named_outside_the_plugins():
     found = hosts_named()
     assert found - FOR_PEOPLE == set(), "a provider's host outside sources/plugins/: move it into its plugin"
+
+
+def test_the_charts_own_cards_links_are_these():
+    """Each link of the charts' cards is a CARD_LINKS pair, and each pair a link of theirs: a page for people, said
+    here one by one. Their parts' and calls' pages are on those links' hosts (the test above holds them to it)."""
+    from liminal_charts import apis
+
+    links = {("apis.py", x.url) for api in apis.APIS for x in api.links}
+    assert links - CARD_LINKS == set(), "a card's link not said in CARD_LINKS"
+    assert CARD_LINKS - links == set(), "a CARD_LINKS pair no card has"
+    hosts = {urlsplit(url).hostname for _, url in CARD_LINKS}
+    pages = {x.docs for api in apis.APIS for x in (*api.areas, *api.calls) if x.docs}
+    assert {urlsplit(p).hostname for p in pages} <= hosts
 
 
 def test_the_datasets_and_the_live_streams_hosts_are_their_plugins():

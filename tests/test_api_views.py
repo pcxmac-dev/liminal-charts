@@ -173,8 +173,12 @@ def test_the_charts_cards_are_sound_and_their_links_people_only():
 
     assert cards.problems(apis.APIS) == []
     assert ChartsApp(log=lambda m: None).apis is apis.APIS
-    assert [a.name for a in apis.APIS] == ["git", "SQLite, through Python's sqlite3", "Python's signal module"]
-    assert all(a.verified in ("2026-11-16", "2026-11-17", "2026-11-18") for a in apis.APIS)  # the landed cards' days
+    assert [a.name for a in apis.APIS] == [
+        "git", "SQLite, through Python's sqlite3", "Python's signal module", "KLineChart", "The sky's data (d3-celestial)",
+        "The world's maps (world-atlas, Natural Earth, GSHHG, the tz database)", "WebGL2", "Server-Sent Events",
+        "pandas", "NumPy"]
+    # the landed cards' days for the first three; the rest read on their makers' pages on 2026-11-26
+    assert [a.verified for a in apis.APIS] == ["2026-11-17", "2026-11-16", "2026-11-18"] + ["2026-11-26"] * 7
 
 
 def _named_on(fn_names, source: str, var: str) -> tuple[set, set]:

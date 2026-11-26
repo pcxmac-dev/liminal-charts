@@ -1237,8 +1237,9 @@ internal.py, ui/static/internal.js; GET /api/app/apis), as the platform's page h
   404. `tests/test_routes.py` holds each table to its chain: a route added without its row fails it.
 - **The cards** (`apis.py`): git (Codebase), SQLite through Python's sqlite3 (the paper account's and the Trading
   Desk's tables) and Python's signal module (the front's stop), each link one already read for a card that landed,
-  with that card's day. The vendored KLineChart, the sky's and the world's data, WebGL2, Server-Sent Events, pandas
-  and numpy have no card yet: none of their makers' pages was read for one.
+  with that card's day; and, each read on its makers' pages on 2026-11-26, the vendored KLineChart, the sky's data
+  (d3-celestial), the world's maps (world-atlas, Natural Earth, GSHHG, the tz database), WebGL2, Server-Sent Events,
+  pandas and NumPy. `tests/test_plugin_boundary.py` pins each card link by its address (CARD_LINKS), one pair a link.
 - **CALLS and ATTRIBUTES** (`frame.py`): what the Plugins view calls and reads on a plugin of each kind, held to
   gui/plugins.py and ChartApp.publishers by a test. The fetching is the library's and is not listed.
 - A server from before is said in words, never an empty tab: a front that passes the question on (the integrator's
