@@ -1234,6 +1234,9 @@
     window.Views.redraw(box, () => paint(cols));
   }
 
+  const SCOPE = () => `plugins:${sel}/${tabShown(sel)}`;
+  // 0.2.11 (Monday list item 31): the side the right-hand menu's top, a row of the middle told under it (viewside.js)
+  const paintSide = (c, side, b) => (window.ViewSide ? window.ViewSide.paint(c, side, render, b, SCOPE()) : window.Views.patch(c, side, render));
   function paint([left, middle, side]) {
     const fields = new Set(box.querySelectorAll('input, textarea, select'));  // a field drawn new gets back what it held
     // what is being typed in Setup survives the view's refreshes (every minute, every few seconds in a rescan)
@@ -1245,11 +1248,12 @@
     if (box.children.length === 3 && a.matches('.ex-venues') && b.matches('.ex-list') && c.matches('.ex-side')) {
       window.Views.patch(a, left, render);
       window.Views.patch(b, middle, render);
-      window.Views.patch(c, side, render);
+      paintSide(c, side, b);
     } else {
       const keep = [...box.querySelectorAll('.ex-venues, .ex-list, .ex-side')].map((el) => el.scrollTop);
-      box.innerHTML = `<div class="ex-venues">${left}</div><div class="ex-list">${middle}</div><aside class="ex-side">${side}</aside>`;
+      box.innerHTML = `<div class="ex-venues">${left}</div><div class="ex-list">${middle}</div><aside class="ex-side">${window.ViewSide?.on ? '' : side}</aside>`;
       box.querySelectorAll('.ex-venues, .ex-list, .ex-side').forEach((el, i) => { el.scrollTop = keep[i] || 0; });
+      if (window.ViewSide?.on) paintSide(box.children[2], side, box.children[1]);
     }
     const fresh = (f) => !!f && !fields.has(f);
     for (const [v, value] of typed) {

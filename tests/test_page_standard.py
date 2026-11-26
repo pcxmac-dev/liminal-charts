@@ -64,3 +64,22 @@ def test_codebase_is_mounted_with_the_panel():
     code = (STATIC / "codeview.js").read_text(encoding="utf-8")
     assert "window.LiminalSide ? window.LiminalSide.panel(sideEl, { app: window.FETCHER_MODE ? 'integrator' : 'charts' }) : null" in code
     assert "C.mount(dataEl, sideEl, { get, send, panel, scope: 'codebase' });" in code
+
+
+def test_the_three_column_views_tell_a_row_of_their_middle_under_their_side():
+    """Plugins, Databases and Exchanges (the integrator's page too): the side the panel's top, patched as before, and a
+    plain row of the middle told in full under it, through viewside.js; a library without side.js: the side whole."""
+    assert HTML.index('src="side.js"') < HTML.index('src="panels.js"') < HTML.index('src="viewside.js"')
+    for view in ("plugins.js", "databases.js", "venues.js"):
+        assert HTML.index('src="viewside.js"') < HTML.index(f'src="{view}"')
+        code = (STATIC / view).read_text(encoding="utf-8")
+        assert "window.ViewSide.paint(c, side, render, b, SCOPE())" in code, view
+        assert "paintSide(c, side, b);" in code and "window.Views.patch(c, side, render);" not in code.replace(
+            ": window.Views.patch(c, side, render));", ""), view
+        assert "<aside class=\"ex-side\">${window.ViewSide?.on ? '' : side}</aside>" in code, view
+        assert "if (window.ViewSide?.on) paintSide(box.children[2], side, box.children[1]);" in code, view
+    side = (STATIC / "viewside.js").read_text(encoding="utf-8")
+    assert "if (!S) { window.Views.patch(aside, html, again); return null; }" in side
+    assert "const slot = panel.tool(scope, null);" in side and "window.Views.patch(slot, html, again);" in side
+    assert "S.rows(middle, { selector: 'tr[data-pick]', panel," in side and "panel.refresh(" in side
+    assert "[data-product],[data-db],[data-venue],[data-plugin],[data-open]" in side  # a view's own picks stay its own
