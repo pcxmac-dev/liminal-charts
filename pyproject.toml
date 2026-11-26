@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "liminal-charts"
-version = "0.2.10"
+version = "0.2.11"
 description = "The Liminal chart app: the chart page and its data views, served by a front that funnels every request to the fetcher (liminal-integrator), on liminal-libs."
 readme = "README.md"
 requires-python = ">=3.10"

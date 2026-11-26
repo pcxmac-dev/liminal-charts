@@ -225,6 +225,11 @@ main { flex: 1; display: flex; min-height: 0; gap: var(--gap); padding: var(--ga
 body.panel-hidden #sidePanel, body.panel-hidden #panelResizer { display: none; }
 #sidePanel section { padding: 10px 12px; background: var(--card); border-radius: var(--radius); }
 #sidePanel section:empty { display: none; }
+/* the page standard's top (0.2.11): the drawing tool picked, its symbol and name, then where the cursor is */
+#sidePanel .chart-tool { margin-bottom: var(--gap); }
+#sidePanel .chart-tool .tool-name { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+#sidePanel .chart-tool svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+body:not([data-view="chart"]) #pTool { display: none; }
 #sidePanel h3 { margin: 0 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
   display: flex; justify-content: space-between; align-items: center; }
 #sidePanel h3 button { font-size: 11px; padding: 1px 6px; text-transform: none; letter-spacing: 0; }

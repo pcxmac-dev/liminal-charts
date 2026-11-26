@@ -590,10 +590,31 @@
     if (b.q1 != null && state.approximate) words.push(`Q1*, Med*, Q3*: ${state.approximate}`);
     return words.length ? `<div class="p-muted small touch-only cursor-tags">${words.map((w) => `<div>${e(w)}</div>`).join('')}</div>` : '';
   }
+  // 0.2.11 (Monday list item 31; liminal-libs docs/PAGES.md: the right-hand menu's top is "the tool picked on the left
+  // (its symbol and name), then what the tools report, with respect to the tool and the main window: in the charts, the
+  // cursor (the arrow tool) over the chart says where it is (the price, the time)"): the drawing tool picked, then where
+  // the cursor is: its bar's time and close, its high and low. Drawn on every chart view, over each view's own panel
+  let toolDrawn = '';
+  function renderTool(s) {
+    const slot = $('pTool');
+    if (!slot) return;
+    const tools = window.drawingTools || [];
+    const tool = tools.find((x) => x.name === window.activeDrawingTool) || tools[0] || { name: 'cursor', title: 'Cursor', icon: '' };
+    const stats = s === undefined ? (typeof cursorStats === 'function' ? cursorStats() : null) : s;
+    const b = stats && stats.bar;
+    const doing = tool.name === 'cursor' ? (stats && !stats.live ? 'over the chart' : 'the last bar, the pointer off the chart')
+      : tool.name === 'measure' ? 'click the chart for its center, then drag its box' : 'click the chart for its points; Esc cancels';
+    const html = `<h3><span class="tool-name"><span class="tool-icon" aria-hidden="true">${tool.icon}</span>${e(tool.title)}</span></h3>`
+      + `<div class="p-muted small">${e(doing)}</div>`
+      + (b ? kv([['Time', `${e(t(barTime(b)))}`], ['Price', priceText(b.close)], ['High', priceText(b.high)], ['Low', priceText(b.low)]]) : '');
+    if (html !== toolDrawn) { slot.innerHTML = html; toolDrawn = html; }
+  }
+  window.renderTool = () => renderTool();
   // The box sits in the price window's upper right corner, below the roll labels of continuous futures.
   function renderCursor() {
     const s = cursorStats();
     const pane = chart.getSize('candle_pane', 'main');
+    renderTool(s);
     if (!s) { box.hidden = true; $('pCursor').innerHTML = ''; return; }
     const b = s.bar;
     const chg = `<span class="${cls(s.change)}">${signedPx(s.change)}${isPrice() && s.changePct != null ? ` (${pct(s.changePct)})` : ''}</span>`;

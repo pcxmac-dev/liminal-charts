@@ -3535,7 +3535,13 @@ function cancelDrawing() {
 
 function setActiveTool(name) {
   document.querySelectorAll('#tools button[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
+  window.activeDrawingTool = name;  // 0.2.11: the right-hand menu's top names it (panels.js renderTool)
+  window.renderTool?.();
 }
+// 0.2.11: the drawing tools as the right-hand menu's top names them: each one's name (its title without its key) and
+// its symbol (the same as its button's); the page standard's charts drawing tools (liminal-libs standard.json)
+window.drawingTools = TOOLS.filter(Boolean).map(([name, title]) => ({ name, title: title.replace(/ \((Esc|Alt\+H)\)/, '').split(':')[0], icon: svg(name) }));
+window.activeDrawingTool = 'cursor';
 
 const MAGNET_MODES = ['normal', 'weak_magnet', 'strong_magnet'];
 

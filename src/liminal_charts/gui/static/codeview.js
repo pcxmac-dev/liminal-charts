@@ -32,7 +32,10 @@
   function show() {
     if (shown) return;
     shown = true;
-    C.mount(dataEl, sideEl, { get, send });
+    // 0.2.11: the side the right-hand menu's top, the repository picked told under it (liminal-libs 1.105.0's side.js;
+    // a library without it: the side drawn whole, as before)
+    const panel = window.LiminalSide ? window.LiminalSide.panel(sideEl, { app: window.FETCHER_MODE ? 'integrator' : 'charts' }) : null;
+    C.mount(dataEl, sideEl, { get, send, panel, scope: 'codebase' });
   }
   function leave() {
     if (!shown) return;

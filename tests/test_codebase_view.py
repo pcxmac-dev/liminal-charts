@@ -178,7 +178,7 @@ def test_the_page_draws_codebase_as_a_view_of_its_rail():
     assert "databases: 'databases', codebase: 'codebase' };" in panels and "['codebase', 'Codebase', 'branch']" in panels
     assert "$('railCodebase').innerHTML = icon('branch', RAIL_ICON);" in panels
     view = _text("codeview.js")
-    assert "C.mount(dataEl, sideEl, { get, send });" in view and "C.unmount();" in view
+    assert "C.mount(dataEl, sideEl, { get, send, panel, scope: 'codebase' });" in view and "C.unmount();" in view  # 0.2.11: with the panel
     assert "if (ev.detail.view === 'codebase') show(); else leave();" in view
     assert "headers: WRITE_HEADERS" in view and "if (b) b.hidden = true;" in view  # an older library: no entry
     css = _text("style.css")

@@ -131,6 +131,9 @@
              panel's top, over none of the panel's own controls -->
         <div class="panel-close-row"><button type="button" id="panelClose" class="panel-close" aria-label="Close the side panel"
           title="Close the side panel">&times;</button></div>
+        <!-- the page standard's top (0.2.11; liminal-libs docs/PAGES.md): the drawing tool picked on the left, its symbol
+             and name, then what it reports: the cursor's price, time and bar (panels.js renderTool), on every chart view -->
+        <section id="pTool" class="side-tool chart-tool" aria-live="off"></section>
         <div class="pane" id="paneStock" data-pane="stock">
           <section id="pSymbol"></section>
           <section id="pStats"></section>
@@ -280,6 +283,7 @@
   <script src="vendor/klinecharts/klinecharts.min.js"></script>
   <script src="gpu.js"></script>
   <script src="icons.js"></script>
+  <script src="side.js"></script><!-- the library's right-hand menu: the tool on top, the middle's pick under it (liminal-libs 1.105.0) -->
   <script src="apis.js"></script><!-- the library's API cards: what each plugin attaches to (liminal-libs 1.49.0) -->
   <script src="internal.js"></script><!-- the library's Internal API and the tabs beside a plugin's title (liminal-libs 1.63.0) -->
   <script src="menu.js"></script><!-- the library's context menu: a rail icon's right click (panels.js) -->
