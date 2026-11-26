@@ -345,13 +345,14 @@ def internal_view(name: str, frame, of: str = "") -> dict | None:
     app's frame from the object (App.plugin_internal), and its cards (`apis`, `apiFacts`), the frame's shape. An entry
     of several objects (a feed plugin of several feeds, a publisher of parts) gives `internal` as a list, one copy of
     each object's with its `label`, `apis` and `apiFacts` (the frame keeps the dict it gives: never added to), and its
-    own cards on top. `parts` names them in order. None when the view has no such entry."""
+    own cards on top. `parts` names them in order, `app` is the frame's title (whose code works with them). None when
+    the view has no such entry."""
     objects = entry_objects(name, of)
     if not objects:
         return None
     apis, facts = _cards(objects[0])
-    out = {"name": name, "of": of or "plugin", "parts": [getattr(o, "name", "") for o in objects], "apis": apis,
-           "apiFacts": facts}
+    out = {"name": name, "of": of or "plugin", "app": str(getattr(frame, "TITLE", "") or ""),
+           "parts": [getattr(o, "name", "") for o in objects], "apis": apis, "apiFacts": facts}
     if len(objects) == 1:
         out["internal"] = dict(frame.plugin_internal(objects[0]))
         return out

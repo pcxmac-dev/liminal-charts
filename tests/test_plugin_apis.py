@@ -34,4 +34,5 @@ def test_the_page_draws_the_cards_after_what_it_already_shows():
     assert "return pubBodyHtml(p) + apisHtml(p, pubPartsOf(p));" in js  # a publisher's: its agencies' too
     assert js.count("From ${signupHtml(p.signup)}") == 2 and "${esc(p.signup)}" not in js  # where a key is made: a link
     page = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert page.index('src="icons.js"') < page.index('src="apis.js"') < page.index('src="plugins.js"')
+    assert page.index('src="icons.js"') < page.index('src="apis.js"') < page.index('src="internal.js"') \
+        < page.index('src="plugins.js"')  # the Internal API and the tabs (0.2.10): the library's internal.js

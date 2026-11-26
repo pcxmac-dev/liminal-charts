@@ -13,7 +13,7 @@ from http.server import ThreadingHTTPServer
 from liminal_libs.apps import App, EnvironmentLogin
 from liminal_libs.storage import Store
 
-from liminal_charts.gui import plugins as plugins_view
+from liminal_charts.gui import plugins as plugins_view, web
 from liminal_charts.gui.front import Front, make_front_handler
 from liminal_charts.gui.server import ChartApp, make_handler
 
@@ -109,6 +109,7 @@ def test_one_entrys_internal_api_is_every_plugin_object_behind_it_none_of_them_c
     assert "label" not in frame.plugin_internal(objects[1])  # the frame's own dict is never added to
     assert plugins_view.internal_view("gov", frame, "publisher")["parts"] == ["gov", "gov-sec"]
     one = plugins_view.internal_view("helper", frame)  # an assistant, not attached to this frame
+    assert one["app"] == frame.TITLE
     assert one["parts"] == ["helper"] and one["internal"]["name"] == "helper" and one["apis"] == []
     assert plugins_view.internal_view("acme-night", frame) is None  # a feed part of another plugin: no entry
     assert plugins_view.internal_view("gov", frame) is None  # a publisher, asked without of=publisher
@@ -138,3 +139,27 @@ def test_the_data_api_answers_an_entrys_two_views_and_leaves_an_unknown_name_to_
             httpd.server_close()
     finally:
         store.close()
+
+
+def test_the_page_draws_this_app_first_and_three_tabs_beside_each_plugins_title():
+    page = (web.STATIC / "index.html").read_text(encoding="utf-8")
+    at = [page.index(f'<script src="{s}"></script>') for s in ("icons.js", "apis.js", "internal.js", "plugins.js")]
+    assert at == sorted(at)
+    assert not (web.STATIC / "internal.js").exists()  # the library's file, never shadowed by one of the page's own
+    js = (web.STATIC / "plugins.js").read_text(encoding="utf-8")
+    assert "const I = window.LiminalInternal || null;" in js and "const OWN = 'app:';" in js  # without it, as before
+    assert '<h4 class="ex-group">This app</h4>' in js and 'data-plugin="${OWN}"' in js and "return mine + groups" in js
+    assert "I.tabs([{ id: 'main', title: 'Main' }, { id: 'external', title: 'External API' }," in js
+    assert "I.tabs([{ id: 'external', title: 'External API' }, { id: 'internal', title: 'Internal API' }]" in js
+    assert "if (I && !folding) return '';" in js and "fold: folding" in js  # the cards: the External API tab's
+    # asked only while shown: its own views, a plugin's by its name (a publisher's told apart)
+    assert "await getJson('/api/app/apis')" in js and "?plugin=${encodeURIComponent(name)}${pub ? '&of=publisher' : ''}" in js
+    assert "if (sel === OWN) loadOwn();" in js and "else if (tabShown(sel) === 'internal') loadInner(sel);" in js
+    assert "own.at && Date.now() - own.at < AGAIN_MS" in js and "was.at && Date.now() - was.at < AGAIN_MS" in js
+    # a server from before, in words: a front that passed the question on, an integrator with no route of its own, a
+    # data API without ?plugin= (404)
+    assert "was started before it could show its own APIs: restart it to see them." in js
+    assert "(d.app?.app || d.internal?.name) !== (FETCHER ? 'integrator' : 'charts')" in js
+    assert "FETCHER && !(d.internal?.counts?.own > 0) && !(d.apis || []).length" in js
+    assert "was started before it could show this plugin's Internal API: restart ${server()} to see it." in js
+    assert "if (!(sel === OWN && I) && (!sel" in js  # This app stays picked through the view's refreshes

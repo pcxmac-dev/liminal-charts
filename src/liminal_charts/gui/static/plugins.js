@@ -55,6 +55,26 @@
   const FEED_STATE = { ok: 'read', unchanged: 'unchanged', waiting: 'waiting', failed: 'failed', refused: 'refused',
                        'not asked yet': 'not asked yet' };
   const PUB = 'pub:';  // a publisher's id in the list (its name may be a feed's too)
+  // This app's own two views, and each plugin's External API and Internal API beside its title (0.2.10, Monday list
+  // item 17; the user, 2026-11-16: "for all apps, and all plugins, there should be an external api tab, and an internal
+  // api tab, the internal api is for interfaces the plugin shares with the rest of the app, the external should be all
+  // the SDKs/APIs the plugin associates with"). The library's internal.js draws the Internal API and the tabs; without
+  // it the view is as it was. What a tab needs is asked only while it is shown, a minute apart at the most, with fetch
+  // itself (a 404 is a server from before, which api() would hold the path back for)
+  const I = window.LiminalInternal || null;
+  const OWN = 'app:';  // This app's id in the list
+  const FETCHER = document.body.dataset.mode === 'fetcher';  // the integrator's own page
+  const AGAIN_MS = 60_000;
+  const OWN_LINE = 'the app itself: what it attaches to, and what it offers its plugins and other apps';
+  const tabOf = new Map();  // the tab shown of each entry, by its id: Main at first (This app's: External API)
+  let own = { at: 0, data: null, error: '', asking: false };  // GET /api/app/apis
+  const inner = new Map();  // an entry's Internal API by its id, the same four (GET /api/app/apis?plugin=NAME)
+  let folding = false;  // the cards drawn folded, for the External API tab (apisHtml)
+  const tabShown = (id) => tabOf.get(id) || (id === OWN ? 'external' : 'main');
+  const appTitle = () => own.data?.app?.title || (FETCHER ? 'Liminal Integrator' : 'Liminal Charts');
+  const server = () => (FETCHER ? 'Liminal Integrator' : 'the integrator');  // who holds the plugins this page shows
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const objectOf = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const ORIGIN = { you: 'set by you', scan: 'found by its scan', default: 'default' };
   const JOBS = { day: 'daily bars', minute: '1-minute', second: '1-second' };
   const num = (n) => (n == null ? '–' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
@@ -105,6 +125,55 @@
       : p.feeds.length ? `${p.feeds.length} feed${p.feeds.length === 1 ? '' : 's'} · every ${every(Math.min(...p.feeds.map((f) => f.every)))}`
         : p.datasets.length ? `${p.datasets.length} dataset${p.datasets.length === 1 ? '' : 's'}` : 'nothing to read');
 
+  async function getJson(path) {
+    const res = await fetch(path);
+    return { status: res.status, ok: res.ok, body: objectOf(await res.json().catch(() => null)) };
+  }
+
+  // This app's own two views: the charts' (the front answers them), or the integrator's on its own page. A front from
+  // before passes the question on and the integrator answers it, an integrator from before answers the frame's
+  // defaults (no route of its own, no card): said in words, nothing of another app drawn under this one's name
+  async function loadOwn() {
+    if (!I || own.asking || (own.at && Date.now() - own.at < AGAIN_MS)) return;
+    own.asking = true;
+    const older = `${appTitle()} was started before it could show its own APIs: restart it to see them.`;
+    let next = { at: Date.now(), data: null, error: '', asking: false };
+    try {
+      const r = await getJson('/api/app/apis'), d = r.body;
+      if (r.status === 404) next.error = older;
+      else if (!r.ok || !d) next = { ...next, at: 0, error: d?.error || `It answered ${r.status}.` };
+      else if ((d.app?.app || d.internal?.name) !== (FETCHER ? 'integrator' : 'charts')) next.error = older;
+      else if (FETCHER && !(d.internal?.counts?.own > 0) && !(d.apis || []).length) next.error = older;
+      else next.data = d;
+    } catch (err) { next = { ...next, at: 0, error: String(err.message || err) }; }
+    own = next;
+    if (sel === OWN) render();
+  }
+
+  // one entry's Internal API, while its tab is shown (a publisher's with &of=publisher: a feed may share its name)
+  async function loadInner(id) {
+    const was = inner.get(id) || { at: 0, data: null, error: '', asking: false };
+    if (!I || !id || id === OWN || was.asking || (was.at && Date.now() - was.at < AGAIN_MS)) return;
+    inner.set(id, { ...was, asking: true });
+    const pub = id.startsWith(PUB), name = pub ? id.slice(PUB.length) : id;
+    let next = { at: Date.now(), data: was.data, error: '', asking: false };
+    try {
+      const r = await getJson(`/api/app/apis?plugin=${encodeURIComponent(name)}${pub ? '&of=publisher' : ''}`), d = r.body;
+      if (r.status === 404) {
+        next = { ...next, data: null, error: `${cap(server())} was started before it could show this plugin's Internal API: restart ${server()} to see it.` };
+      } else if (!r.ok || !d) next = { ...next, at: 0, error: d?.error || `It answered ${r.status}.` };
+      else next.data = d;
+    } catch (err) { next = { ...next, at: 0, error: String(err.message || err) }; }
+    inner.set(id, next);
+    if (sel === id && tabShown(id) === 'internal') render();
+  }
+
+  // what the tab shown needs, asked
+  function askShown() {
+    if (sel === OWN) loadOwn();
+    else if (tabShown(sel) === 'internal') loadInner(sel);
+  }
+
   async function load() {
     clearTimeout(timer);
     if (document.body.dataset.view !== 'plugins' || document.hidden) return;
@@ -113,9 +182,12 @@
       const part = sel?.startsWith(PUB) ? pubNamed(sel.slice(PUB.length)) : null;
       const up = part && parentOf(part);  // a part picked: its plugin's page, its section open
       if (up) { folds.set(part.name, true); sel = up.id; }
-      if (!sel || !(data.plugins.some((p) => p.name === sel) || publisher())) sel = data.plugins[0]?.name || null;
+      if (!(sel === OWN && I) && (!sel || !(data.plugins.some((p) => p.name === sel) || publisher()))) {
+        sel = data.plugins[0]?.name || null;
+      }
     } catch (err) { showError(err); }
     render();
+    askShown();
     timer = setTimeout(load, data?.running || data?.rechecking ? 4_000 : 60_000);
   }
 
@@ -304,7 +376,10 @@
       + (sets ? `<h4 class="ex-group">Datasets</h4>${sets}` : '');
     const left = data.errors.length ? `<h4 class="ex-group">Left out</h4>${data.errors.map((e) => `
       <div class="pl-error"><b>${esc(e.where)}</b><div class="p-muted small">${esc(e.why)}</div></div>`).join('')}` : '';
-    return groups + news + left;
+    const mine = I ? `<h4 class="ex-group">This app</h4><button type="button" class="ex-venue${sel === OWN ? ' active' : ''}" data-plugin="${OWN}" title="${esc(`${appTitle()}: ${OWN_LINE}`)}">
+          <span class="ex-name">${esc(appTitle())}</span>
+          <span class="ex-count">its own External and Internal API</span></button>` : '';
+    return mine + groups + news + left;
   }
 
   // -- middle: the plugin picked -------------------------------------------------------------
@@ -500,14 +575,19 @@
   function apisHtml(p, parts = []) {
     // a server older than the cards sends no `apis` (the page's files are read from the checkout at each request): none
     if (!window.LiminalApis || ![p, ...parts].some((e) => Array.isArray(e.apis))) return '';
+    if (I && !folding) return '';  // with the tabs, the cards are the External API tab's (externalHtml)
     const seen = new Map(), facts = {};
     [p, ...parts].forEach((e) => {
       (e.apis || []).forEach((a) => { if (!seen.has(a.name)) seen.set(a.name, a); });
       Object.assign(facts, e.apiFacts || {});
     });
     const older = `Written for plugin API ${p.api || 'before 2.2'}: it does not say yet what it attaches to.`;
-    return window.LiminalApis.html([...seen.values()], facts, { owner: p.name, empty: seen.size ? '' : older });
+    return window.LiminalApis.html([...seen.values()], facts, { owner: p.name, empty: seen.size ? '' : older, fold: folding });
   }
+  const foldedApisHtml = (p, parts) => {
+    folding = true;
+    try { return apisHtml(p, parts); } finally { folding = false; }
+  };
   const pubPartsOf = (p) => (data?.publishers || []).filter((q) => q.partOf === p.name && q.name !== p.name);
   // where a key is made, a link when it is an https address
   const signupHtml = (s) => {
@@ -1000,6 +1080,86 @@
         was exact, not that the feed's data is right.</div>`;
   }
 
+  // -- the tabs beside the title (0.2.10): Main, External API, Internal API; This app's two --------------------------
+  function tabsHtml(p, pub) {
+    if (!I) return '';
+    if (sel === OWN) {
+      return I.tabs([{ id: 'external', title: 'External API' }, { id: 'internal', title: 'Internal API' }], tabShown(OWN),
+        `${appTitle()}: its own APIs`);
+    }
+    const it = pub || p;
+    return it ? I.tabs([{ id: 'main', title: 'Main' }, { id: 'external', title: 'External API' },
+      { id: 'internal', title: 'Internal API' }], tabShown(sel), `${it.title}: its pages`) : '';
+  }
+
+  function middleHtml() {
+    if (sel === OWN && I) return ownHtml();
+    const tab = I ? tabShown(sel) : 'main';
+    if (tab === 'external') return externalHtml();
+    if (tab === 'internal') return internalHtml();
+    return mainHtml();
+  }
+
+  function externalHtml() {
+    const pub = publisher(), p = pub || plugin();
+    if (!p) return '<div class="empty">No plugin found.</div>';
+    const parts = pub || !(p.ai || p.audit) ? pubPartsOf(p) : [];
+    return foldedApisHtml(p, parts) || `<div class="empty">${esc(`${cap(server())} was started before it could say what its plugins attach to: restart ${server()} to see it.`)}</div>`;
+  }
+
+  function internalHtml() {
+    const got = inner.get(sel);
+    if (!got || (!got.data && !got.error)) return '<div class="empty">Asking for its Internal API…</div>';
+    if (!got.data) return `<div class="pl-warn">${esc(got.error)}</div>`;
+    const d = got.data;
+    try {
+      return (got.error ? `<div class="pl-warn">${esc(got.error)}</div>` : '')
+        + I.html(d.internal ?? null, { owner: `pl:${sel}`, title: 'Its Internal API', app: d.app || server(),
+          older: 'Its answer says nothing of what it shares with the app.' });
+    } catch (e) {
+      return `<div class="pl-warn">${esc(`Its Internal API could not be drawn: ${e.message}`)}</div>`;
+    }
+  }
+
+  function ownHtml() {
+    if (!own.data) return `<div class="${own.error ? 'pl-warn' : 'empty'}">${esc(own.error || `Asking ${appTitle()}…`)}</div>`;
+    const d = own.data, i = objectOf(d.internal);
+    try {
+      if (tabShown(OWN) === 'internal') {
+        return i ? I.html(i, { owner: `app:${i.name || 'charts'}`, title: 'Its own Internal API', app: appTitle() })
+          : '<div class="empty">Its answer says nothing of what it offers its plugins and other apps.</div>';
+      }
+      return window.LiminalApis ? window.LiminalApis.html(d.apis, d.apiFacts, { owner: OWN, fold: true,
+        title: 'The APIs and SDKs it associates with', empty: 'It declares no outside API or SDK.' }) : '';
+    } catch (e) {
+      return `<div class="pl-warn">${esc(`Its own APIs could not be drawn: ${e.message}`)}</div>`;
+    }
+  }
+
+  // This app's facts, beside its two views
+  function ownSideHtml() {
+    const d = own.data || {}, app = objectOf(d.app) || {}, i = objectOf(d.internal) || {};
+    const routes = Array.isArray(i.routes) ? i.routes : [], mine = routes.filter((r) => r && r.own).length;
+    const login = objectOf(i.login);
+    const known = Array.isArray(i.plugins) ? i.plugins.filter((x) => x && x.name) : null;
+    const attached = known ? known.filter((x) => x.attached !== false).length : 0;
+    const rows = [
+      ['API', app.api || i.api],
+      ['Address', app.url || i.url],
+      ['Port', app.port || i.port ? `${app.port || i.port}${i.portVar ? ` (${i.portVar})` : ''}` : ''],
+      ['Plugin API', i.pluginApi ? `${i.pluginApi}, offered to its plugins` : ''],
+      ['Login', login ? [login.kind, login.namespace].filter(Boolean).join(', ') || 'one' : own.data && 'login' in i ? 'none' : ''],
+      ['Routes', routes.length ? `${routes.length} (${mine} its own)` : ''],
+      ['Plugins', !known ? '' : !known.length ? 'none here' : `${known.length}, ${attached} attached`],
+      ['Links', (i.linked || []).map((x) => x.name).filter(Boolean).join(', ')],
+      ['Outside APIs', Array.isArray(d.apis) ? String(d.apis.length) : ''],
+    ].filter(([, v]) => v !== undefined && v !== null && v !== '');
+    const dl = rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+    return `<h3>${esc(appTitle())}</h3><div class="p-muted small">its own APIs</div>`
+      + (dl ? `<table class="act-table ex-mini"><tbody>${dl}</tbody></table>` : '')
+      + (own.data ? '' : `<div class="p-muted small">${esc(own.error || `Asking ${appTitle()}…`)}</div>`);
+  }
+
   function mainHtml() {
     const pub = publisher();
     if (pub) return pubMainHtml(pub);
@@ -1013,6 +1173,7 @@
 
   // -- right: its part in the delivery scheme, its usage, its keys ---------------------------
   function sideHtml() {
+    if (sel === OWN && I) return ownSideHtml();
     const pub = publisher();
     if (pub) return pubSideHtml(pub);
     const p = plugin();
@@ -1066,8 +1227,8 @@
         ${data.offline ? whyNot('This offline copy of the app sends no requests and saves no settings: its buttons and pickers are off') : ''}
         ${note ? `<div class="p-muted small pl-note-line">${esc(note)}</div>` : ''}
         ${listHtml()}`,
-      `<div class="view-head"><div><h2>${esc(pub?.title || p?.title || '')}</h2>
-        <div class="p-muted small">${esc(head)}</div></div></div>${mainHtml()}`,
+      `<div class="view-head"><div><h2>${esc(sel === OWN && I ? appTitle() : pub?.title || p?.title || '')}</h2>
+        <div class="p-muted small">${esc(sel === OWN && I ? OWN_LINE : head)}</div>${tabsHtml(p, pub)}</div></div>${middleHtml()}`,
       sideHtml(),
     ];
     window.Views.redraw(box, () => paint(cols));
@@ -1121,8 +1282,12 @@
       document.getElementById('railFetcher')?.click();
       return;
     }
-    const t = e.target.closest('[data-plugin],[data-rescan],[data-recheck],[data-pause],[data-save-key],[data-remove-key],[data-ai-ask],[data-audit-run]');
+    const t = e.target.closest('[data-api-tab],[data-plugin],[data-rescan],[data-recheck],[data-pause],[data-save-key],[data-remove-key],[data-ai-ask],[data-audit-run]');
     if (!t || t.disabled) return;
+    if (t.dataset.apiTab) {  // a tab beside the title: its page, and what it needs asked
+      tabOf.set(sel, t.dataset.apiTab); render(); askShown();
+      return;
+    }
     if (t.dataset.aiAsk) {
       aiAsk(t.dataset.aiAsk);
     } else if (t.dataset.auditRun) {
@@ -1150,7 +1315,7 @@
       // another plugin picked: a field still focused (a key half typed) let go, so its page is all the new plugin's;
       // on a phone (the columns stacked) its page, below the list, brought into view
       window.Views.letGo(box);
-      sel = t.dataset.plugin; render();
+      sel = t.dataset.plugin; render(); askShown();
       window.Views.reveal(box.querySelector('.ex-list'));
     } else if (t.dataset.rescan) {
       rescan(t.dataset.rescan === '*' ? null : t.dataset.rescan);
