@@ -966,6 +966,14 @@ class ChartApp:
         self._plugins_cache = (time.monotonic(), out, (bool(running), bool(rechecking)))
         return out
 
+    def plugin_apis(self, name: str, of: str = "") -> dict | None:
+        """One entry of the Plugins view's two views (GET /api/app/apis?plugin=NAME, &of=publisher: plugins.internal_view),
+        asked only while its Internal API tab is shown: for every plugin object behind the entry, made by the frame from
+        the object; nothing of a plugin is called, nothing kept here. None: no such entry (the frame's to answer)."""
+        from . import plugins
+
+        return plugins.internal_view(name, self.frame, of)
+
     def _rescan_running(self) -> dict | None:
         proc, info = self._rescan
         if proc is None or proc.poll() is not None:
@@ -2471,6 +2479,10 @@ def make_handler(app: ChartApp, port_ref: list[int]):
                     return self._json(app.dataset_series(q["name"]))
                 if url.path == "/api/dataset/values":
                     return self._json(app.dataset_values(q["name"], q["series"]))
+                if url.path == "/api/app/apis" and q.get("plugin"):  # one entry of the Plugins view (0.2.10, item 17)
+                    found = app.plugin_apis(q["plugin"], q.get("of", ""))
+                    if found is not None:
+                        return self._json(found)
                 if url.path.startswith("/api/"):  # a route of the app this API speaks for (the integrator's databases)
                     return self._frame_get(url.path, q)
             except (KeyError, ValueError) as e:

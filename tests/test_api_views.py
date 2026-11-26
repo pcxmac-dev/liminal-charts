@@ -10,7 +10,12 @@ import threading
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 
+from liminal_libs.apps import App, EnvironmentLogin
+from liminal_libs.storage import Store
+
+from liminal_charts.gui import plugins as plugins_view
 from liminal_charts.gui.front import Front, make_front_handler
+from liminal_charts.gui.server import ChartApp, make_handler
 
 from .test_front import upstream  # noqa: F401 - the integrator's data API as a small echoing server
 
@@ -51,3 +56,85 @@ def test_the_charts_page_asks_the_charts_app_for_its_own_views_and_the_integrato
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+class Integrator(App):
+    """The integrator as the data API's frame (liminal-integrator's app.py), attaching nothing."""
+
+    NAME = "integrator"
+
+    def __init__(self):
+        super().__init__(log=lambda m: None, login=EnvironmentLogin())
+
+
+class StandIn:
+    """A plugin object as far as its Internal API reads one: never called (`asked` stays empty)."""
+
+    KIND = "feed"
+
+    def __init__(self, name, title, kind="feed"):
+        self.name, self.title, self.KIND, self.asked, self.apis = name, title, kind, [], ()
+
+    def status(self):  # a hook it answers: listed, never called here
+        self.asked.append("status")
+        return {}
+
+
+def _stand_ins(monkeypatch):
+    """A feed plugin of two feeds and a publisher (acme: acme, acme-night; acme-news), a publisher of two parts (gov:
+    gov, gov-sec) and an assistant, in the view's registry lookups."""
+    feeds = {"acme": StandIn("acme", "Acme"), "acme-night": StandIn("acme-night", "Night")}
+    pubs = {"acme-news": StandIn("acme-news", "Acme headlines", "publisher"), "gov": StandIn("gov", "Gov", "publisher"),
+            "gov-sec": StandIn("gov-sec", "The SEC", "publisher")}
+    helpers = {"helper": StandIn("helper", "Helper", "assistant")}
+    parts = {"acme": ["acme-news"], "gov": ["gov-sec"]}
+    monkeypatch.setattr(plugins_view, "providers", lambda: feeds)
+    monkeypatch.setattr(plugins_view, "publishers", lambda: pubs)
+    monkeypatch.setattr(plugins_view, "assistants", lambda: helpers)
+    monkeypatch.setattr(plugins_view, "auditors", lambda: {})
+    monkeypatch.setattr(plugins_view, "plugin_of", lambda n: "acme" if n == "acme-night" else n)
+    monkeypatch.setattr(plugins_view, "plugin_feeds", lambda n: ["acme", "acme-night"] if n == "acme" else [n])
+    monkeypatch.setattr(plugins_view, "publisher_parts", lambda n: parts.get(n, []))
+    monkeypatch.setattr(plugins_view, "label", lambda n: "acme (night)" if n == "acme-night" else n)
+    return [*feeds.values(), *pubs.values(), *helpers.values()]
+
+
+def test_one_entrys_internal_api_is_every_plugin_object_behind_it_none_of_them_called(monkeypatch):
+    objects = _stand_ins(monkeypatch)
+    frame = Integrator()
+    got = plugins_view.internal_view("acme", frame)
+    assert got["parts"] == ["acme", "acme-night", "acme-news"] and isinstance(got["internal"], list)
+    assert [x["label"] for x in got["internal"]] == ["acme", "acme (night)", "acme-news"]
+    assert [x["name"] for x in got["internal"]] == ["acme", "acme-night", "acme-news"]
+    assert "label" not in frame.plugin_internal(objects[1])  # the frame's own dict is never added to
+    assert plugins_view.internal_view("gov", frame, "publisher")["parts"] == ["gov", "gov-sec"]
+    one = plugins_view.internal_view("helper", frame)  # an assistant, not attached to this frame
+    assert one["parts"] == ["helper"] and one["internal"]["name"] == "helper" and one["apis"] == []
+    assert plugins_view.internal_view("acme-night", frame) is None  # a feed part of another plugin: no entry
+    assert plugins_view.internal_view("gov", frame) is None  # a publisher, asked without of=publisher
+    assert plugins_view.internal_view("nobody", frame) is None
+    assert not any(o.asked for o in objects)
+
+
+def test_the_data_api_answers_an_entrys_two_views_and_leaves_an_unknown_name_to_its_frame(tmp_path, monkeypatch):
+    _stand_ins(monkeypatch)
+    store = Store(tmp_path / "liminal.db", check_same_thread=False)
+    try:
+        app = ChartApp(store, frame=Integrator())
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app, [0]))
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        port = httpd.server_address[1]
+        try:
+            status, got = _call(port, "/api/app/apis?plugin=acme")
+            assert status == 200 and got["parts"] == ["acme", "acme-night", "acme-news"]
+            status, got = _call(port, "/api/app/apis?plugin=gov&of=publisher")
+            assert status == 200 and got["of"] == "publisher" and len(got["internal"]) == 2
+            status, got = _call(port, "/api/app/apis?plugin=nobody")  # the frame's: no plugin of that name attached
+            assert status == 404 and "nobody" in got["error"]
+            status, got = _call(port, "/api/app/apis")  # without ?plugin=: its frame's own two views
+            assert status == 200 and got["app"]["app"] == "integrator"
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+    finally:
+        store.close()

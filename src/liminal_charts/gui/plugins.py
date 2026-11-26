@@ -30,6 +30,11 @@ saved as your user environment variable (ChartApp.set_key); its plan chosen (Cha
 
 Read from the settings, the plugins' reports, the scans kept (kv sourcing.SCAN_KEY), the watchlist
 and the request ledger: no requests. A key's value never leaves: only whether it is set.
+
+An entry's Internal API (0.2.10, Monday list item 17) is asked only while its tab is shown (GET
+/api/app/apis?plugin=NAME, &of=publisher for a publisher): internal_view, for every plugin object
+behind the entry (a feed plugin's feeds and its publishers, a publisher's parts), each made by the
+app's frame from the object itself (App.plugin_internal): nothing of a plugin is called.
 """
 from __future__ import annotations
 
@@ -40,7 +45,8 @@ from datetime import date, datetime
 from liminal_libs.sources import apis as apis_mod
 from liminal_libs.sources import providers
 from liminal_libs.sources.registry import (PLUGIN_API, assistants, auditors, database_row, errors, key_row, label,
-                                          plugin_databases, plugin_feeds, plugin_keys, plugin_of, publisher_parts)
+                                          plugin_databases, plugin_feeds, plugin_keys, plugin_of, publisher_parts,
+                                          publishers)
 
 GROUPS = ("Feeds with keys", "Public feeds", "AI assistants", "Auditing")
 RECENT_EVALUATIONS = 8  # an assistant's last answers shown on its page
@@ -307,3 +313,52 @@ def view(store, settings, feeds: dict, scheme, scans: dict, running: dict | None
             "api": PLUGIN_API,
             "running": running, "offline": bool(settings.offline),
             "keyScript": r"powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\set-key.ps1"}
+
+
+def entry_objects(name: str, of: str = "") -> list:
+    """The plugin objects behind one entry of the view, its own first: a publisher's (`of` "publisher": itself, then
+    its parts, Federal's agencies); else an AI assistant, the auditors' plugin, or a feed plugin's feeds (its own, then
+    those part of it: Alpaca's Blue Ocean) and then its publishers (Massive's headlines). A name the view has no entry
+    of (a feed part of another plugin, one not installed): none."""
+    if of == "publisher":
+        found = publishers()
+        return [found[n] for n in (name, *publisher_parts(name)) if n in found]
+    for found in (assistants(), auditors()):
+        if name in found:
+            return [found[name]]
+    feeds = providers()
+    if name not in feeds or plugin_of(name) != name:
+        return []
+    found = publishers()
+    return [*(feeds[f] for f in plugin_feeds(name)), *(found[n] for n in publisher_parts(name) if n in found)]
+
+
+def _cards(obj) -> tuple[list, dict]:
+    """What a plugin object attaches to (plugin API 2.2): its cards and what it learned of them, as the view's entries
+    carry them."""
+    cards = apis_mod.as_dicts(getattr(obj, "apis", ()) or ())
+    return cards, (apis_mod.facts_of(obj) if cards else {})
+
+
+def internal_view(name: str, frame, of: str = "") -> dict | None:
+    """One entry's two views, as GET /api/app/apis?plugin=NAME answers them: `internal`, its Internal API made by the
+    app's frame from the object (App.plugin_internal), and its cards (`apis`, `apiFacts`), the frame's shape. An entry
+    of several objects (a feed plugin of several feeds, a publisher of parts) gives `internal` as a list, one copy of
+    each object's with its `label`, `apis` and `apiFacts` (the frame keeps the dict it gives: never added to), and its
+    own cards on top. `parts` names them in order. None when the view has no such entry."""
+    objects = entry_objects(name, of)
+    if not objects:
+        return None
+    apis, facts = _cards(objects[0])
+    out = {"name": name, "of": of or "plugin", "parts": [getattr(o, "name", "") for o in objects], "apis": apis,
+           "apiFacts": facts}
+    if len(objects) == 1:
+        out["internal"] = dict(frame.plugin_internal(objects[0]))
+        return out
+    out["internal"] = []
+    for obj in objects:
+        cards, learned = _cards(obj)
+        part = getattr(obj, "name", "")
+        out["internal"].append({**frame.plugin_internal(obj), "label": label(part) if part in providers() else part,
+                                "apis": cards, "apiFacts": learned})
+    return out

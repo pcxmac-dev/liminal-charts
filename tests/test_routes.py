@@ -82,9 +82,11 @@ def test_every_frame_route_is_the_fronts_own_or_passed_on_once():
 
 
 def test_the_frames_writes_the_data_api_does_not_answer_are_said_so():
-    literals = literals_in(inspect.getsource(server.make_handler))
-    assert not any(lit == "/api/app" or lit.startswith("/api/app/") for lit in literals)
-    assert '"signal"' not in inspect.getsource(server.make_handler)  # no write of a plugin's signal there
+    fn = next(n for n in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(server.make_handler))))
+              if isinstance(n, ast.FunctionDef) and n.name == "_write")
+    writes = ast.unparse(fn)
+    assert not any(lit == "/api/app" or lit.startswith("/api/app/") for lit in literals_in(writes))
+    assert "'app'" not in writes and "'signal'" not in writes  # no part of a path naming them in its writes
     assert _keys(routes.NOT_ANSWERED) == list(routes.NOT_ANSWERED_PATHS)
     for row in routes.NOT_ANSWERED:
         assert row[2].startswith(routes.UNANSWERED)
