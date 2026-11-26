@@ -39,10 +39,11 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from liminal_libs import config
 from liminal_libs.apps import PAIRS_PATH, Binding, PortTaken, forward, pairs_wanted, serve_object
+from liminal_libs.apps.app import APIS_PATH
 from liminal_libs.apps import databases as db_section
 from liminal_libs.apps.platform import ELSEWHERE
 from liminal_libs.logs import log_to
@@ -103,6 +104,12 @@ def _is_codebase(path: str) -> bool:
     return path == CODEBASE_PREFIX or path.startswith(CODEBASE_PREFIX + "/")
 
 
+# the charts' own External and Internal API (0.2.10, Monday list item 17): GET /api/app/apis answered by the charts app
+# held here; with ?plugin=NAME, one entry of the Plugins view, whose plugins the integrator holds: passed on to it
+def _asks_a_plugin(raw: str) -> bool:
+    return bool(parse_qs(urlsplit(raw).query).get("plugin", [""])[-1])
+
+
 # The database plugins' forms (0.2.8, Monday list item 30, step 5; the user, 2026-11-25: the instance forms move to the
 # platform's Databases section, the platform the only writer of instance settings): a test, a read, is passed on to the
 # integrator as before; a change is refused here and never passed on, whichever integrator answers (one from before
@@ -135,6 +142,7 @@ class Front:
         # name and title, where it is served (set once served), the pairs its plugins ask for (read here)
         self.charts = ChartsApp(log=log)
         self.charts.login_pairs = self.login_pairs
+        self.charts.fronting = True  # its routes the front's (frame.py ChartsApp.routes: gui/routes.py)
         self.url = ""  # this front's own address once served
 
     @property
@@ -299,6 +307,8 @@ def make_front_handler(front: Front):
                     self._json({"pairs": front.login_pairs()})
                 return
             if _is_codebase(path):  # the charts app's own, answered by the app held here (its own checks)
+                return serve_object(self, front.charts, "GET", self.path)
+            if path == APIS_PATH and not _asks_a_plugin(self.path):  # the charts' own two views (0.2.10), as Codebase
                 return serve_object(self, front.charts, "GET", self.path)
             if path.startswith(("/api/", "/v1/")):  # /v1/: the Trading Desk's client API (Monday list item 37)
                 if self._from_this_app():

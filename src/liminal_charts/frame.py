@@ -34,12 +34,45 @@ class ChartsApp(Platform):
     # the platform part it inherits (0.2.8): the database plugins, read here; never the writer of their instance settings
     PLATFORM_NEEDS = ("database",)
     PLATFORM_WRITER = False
+    # its own Internal API (0.2.10, Monday list item 17; liminal-libs 1.63.0's App, GET /api/app/apis): its routes as
+    # it is served (routes()), the apps it links and a few words of its own
+    fronting = False  # set by the front that holds it (gui/front.py): its routes are then the front's
+    LINKED = (
+        ("integrator", "linked, reached at its own port on this machine and never started from here: every request of "
+                       "the charts' pages but the front's own is passed on to its data API", "LIMINAL_FETCHER_PORT",
+         "/api/"),
+        ("platform", "linked, reached at its own address, on this machine or another, and never started from here: its "
+                     "pages and its API under /platform/, only its own cookies passed on, its tray at the rail's foot",
+         "LIMINAL_PLATFORM_URL", "/platform/"),
+    )
+    INTERNAL_NOTES = (
+        "Behind the front (liminal-charts gui), the charts' pages ask the integrator it links for their data: the "
+        "integrator holds the stock-data plugins in its own process, so the charts app here attaches none, and the data "
+        "API's routes (gui/server.py) are listed on the integrator's Internal API, where they are answered.",
+        "The login is an object of the login class held here, the charts app its superclass: its page and its API under "
+        "/login/ at the charts' own port, no port of its own. The plugins read their keys through it.",
+        "Alone (liminal-charts gui --alone), the charts app holds every plugin the registry loaded and answers the data "
+        "API itself, in this one process: its routes are then the data API's.",
+        "A plugin's Internal API in the Plugins view is asked only while its tab is shown (GET "
+        "/api/app/apis?plugin=NAME, &of=publisher for a publisher): the data API answers it for every plugin object "
+        "behind that entry, read from the objects and nothing of them called.",
+    )
 
     def __init__(self, log=print, login: Login | None = None):
         # The user environment variables stand in for a login session until the app holds one of its own
         # (the front asks the login app of the charts namespace who is signed in; a key furnished per
         # signed-in user is the design to come).
         super().__init__(log=log, login=login if login is not None else EnvironmentLogin())
+
+    def routes(self) -> tuple:
+        """Its own routes as its Internal API lists them (gui/routes.py): behind the front, the front's (what it answers
+        itself, then each of the frame's routes it passes on to the integrator); alone, the data API's, the platform
+        core's two Databases routes and the frame's writes the data API does not answer."""
+        from .gui import routes
+
+        if self.fronting:
+            return (*routes.FRONT_ROUTES, *routes.passed_on())
+        return (*routes.DATA_ROUTES, *routes.PLATFORM_CORE, *routes.NOT_ANSWERED)
 
     def attach_plugins(self, only: str | None = None) -> list[str]:
         """Every plugin the registry loaded (one system with `only`: "integrator", "platform"), attached
