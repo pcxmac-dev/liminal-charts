@@ -289,10 +289,11 @@ liminal-integrator"; "all lib calls will point to liminal-libs".
   that parts of the code can be executed remotely, and connected through the icon bridge (far right
   side)"): at LIMINAL_PLATFORM_URL (http://127.0.0.1:8775, or another machine's address), its tray at the
   rail's foot before the login's, its page under /platform/ (?embedded=1; a plugin's icon opens it at
-  #<plugin>), only its own cookies passed on (liminal_login_platform), its cookies' path narrowed to
-  /platform; one not running leaves its icons off and the page told, nothing started. The integrator's
-  own page holds the integrator's login (liminal-integrator 1.9.0): its sign-in until signed in there,
-  answered under /login/ at 8785 before the app wakes; the data API is not behind it (this front reads it).
+  #<plugin>), only its own cookies passed on (liminal_login_platform) and no login's session header
+  (0.2.14), its cookies' path narrowed to /platform; one not running leaves its icons off and the page
+  told, nothing started. The integrator's own page holds the integrator's login (liminal-integrator 1.9.0):
+  its sign-in until signed in there, answered under /login/ at 8785 before the app wakes; the data API is
+  not behind it (this front reads it).
   (Until 2026-11-03 the front attached to the fetcher host itself and proxied to the page that host
   served on a port of its own: three listeners. The user: "for the webserver / ports, i just
   integrator, and charts".) `gui
@@ -1308,6 +1309,15 @@ here. The library's test calls forward() with a stand-in connection.
 - Tests: tests/test_desk.py, tests/test_paper.py, tests/test_layouts.py, tests/test_front.py, and text assertions on
   trading.js and app.js (tests/test_frontend_guards.py, tests/test_frontend_review.py); the two scripts were run in
   headless Edge on stand-ins.
+
+### Item 14: the session header on the platform's link (0.2.14, 2026-11-27)
+
+- **A login's session header** (what A7 left): 0.2.13 took `X-Liminal-Session` off a request before the integrator,
+  but the platform's link (`/platform/`) still passed it on, and the platform may be on another machine. Nothing
+  needs it there: only LoginClient programs send the header, and nothing in the suite makes one; the platform's pages
+  sign in by its own cookie, the one cookie the link passes. The header has one name whichever login's session it
+  carries, so the front cannot tell the platform's from its own, as it does a cookie. It is kept at the front here too.
+- Tests: tests/test_front.py, a platform stand-in recording what it was handed.
 
 ## State (2026-10-24)
 
