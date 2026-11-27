@@ -522,12 +522,19 @@ def test_profiles_have_a_login_page_and_keep_their_own_preferences():
 
 def test_buy_and_sell_place_one_order_at_a_time_each_attempt_named():
     """The review of 2026-11-21, item 26: a double click on Buy placed two paper orders. The ticket's buttons are off
-    while an order is on its way, and each attempt carries its own clientId (the server answers a repeat with the
-    order it placed: test_paper.py)."""
+    while an order is on its way, and each order carries its own clientId (the server answers a repeat with the
+    order it placed: test_paper.py). Item 14's review (A3): the name was made new at every press, so no request ever
+    carried one used before; it is kept for the ticket's contents until an order is placed with it, and a press again
+    after no answer sends it again (the script itself is run in headless Edge on stand-ins)."""
     place = _js("trading.js").split("async function place(side) {", 1)[1].split("\n  }\n", 1)[0]
     assert place.lstrip().startswith("if (placing) return;")
-    assert "clientId: attemptId()" in place
+    assert "clientId: attemptId()" not in place and "clientId: sent.id" in place
+    assert "if (!attempt || attempt.contents !== contents) attempt = { contents, id: attemptId() };" in place
     sent = place.index("await apiWrite('POST', '/api/trading/orders', body)")
     assert place.index("placing = true;") < sent and place.index("b.disabled = true;") < sent
+    # spent once an order is placed with it, never on a failure: that keeps it for the press again
+    tried, failed = place.split("} catch (err) {", 1)
+    assert tried.index("if (attempt === sent) attempt = null;") > tried.index("await apiWrite(")
+    assert "attempt = null" not in failed
     done = place.split("} finally {", 1)[1]
     assert "placing = false;" in done and "b.disabled = false;" in done

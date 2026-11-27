@@ -129,9 +129,13 @@
   });
 
   // One order on its way at a time (the review of 2026-11-21, item 26: a double click on Buy placed two): until the
-  // answer comes, Buy and Sell are off and a second press places nothing, as the New-account form's Open. Each
-  // attempt carries a name of its own (clientId): a request sent again with it is answered with the order it placed.
+  // answer comes, Buy and Sell are off and a second press places nothing, as the New-account form's Open. Each order
+  // carries a name of its own (clientId), kept for the ticket's contents until an order is placed with it: a press
+  // again after no answer (the network, the app gone a moment) or a refusal sends the same name, and the app answers
+  // a name it placed with that order, never a second one (item 14's review, A3: a name made new at every press was
+  // never sent again). Once placed, the next press is a new order under a new name; so is one with other contents.
   let placing = false;
+  let attempt = null;  // { contents, id }: the ticket's last attempt not answered with its order
   const attemptId = () => (window.crypto?.randomUUID ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
   async function place(side) {
@@ -139,14 +143,19 @@
     const msg = $('trMsg');
     if (!$('trTicket').reportValidity()) return;  // what a submit checks: a symbol, a quantity of 0 or more
     const sym = $('trSym').value.trim().toUpperCase();
-    const body = { ticker: sym, source: sym === state.ticker ? state.source : '*', side,
-                   qty: Number($('trQty').value), type: $('trType').value, limit: $('trLimit').value || null,
-                   stop: $('trStop').value || null, tif: $('trTif').value, clientId: attemptId() };
+    const ticket = { ticker: sym, source: sym === state.ticker ? state.source : '*', side,
+                     qty: Number($('trQty').value), type: $('trType').value, limit: $('trLimit').value || null,
+                     stop: $('trStop').value || null, tif: $('trTif').value };
+    const contents = JSON.stringify(ticket);
+    if (!attempt || attempt.contents !== contents) attempt = { contents, id: attemptId() };
+    const sent = attempt;
+    const body = { ...ticket, clientId: sent.id };
     placing = true;
     const buttons = [...$('trTicket').querySelectorAll('button[data-side]')];
     buttons.forEach((b) => { b.disabled = true; });
     try {
       const o = await apiWrite('POST', '/api/trading/orders', body);
+      if (attempt === sent) attempt = null;  // placed: its name is spent
       msg.className = 'small up';
       msg.textContent = `Paper order ${o.id}: ${o.side} ${o.qty} ${o.ticker}, ${o.status}${o.fill_px != null ? ` at ${px(o.fill_px)}` : ''}`;
       load();
