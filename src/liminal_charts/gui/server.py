@@ -1323,6 +1323,10 @@ class ChartApp:
                 "liveTrading": False, "broker": "paper", **book}
 
     def trade_place(self, body: dict) -> dict:
+        if str(body.get("clientId") or "").startswith("v1:"):
+            # the Trading Desk's names (v1:<its idempotency key>): a paper order under one is a desk order, which a try
+            # that ended before its record is answered with on the retry (trading/desk.py, item 14's review, A2)
+            raise ValueError("a client order id beginning v1: is the Trading Desk's: name the attempt otherwise")
         with self._paper_lock:
             return self.paper.place(body.get("ticker", ""), body.get("source") or "*", body.get("side", ""),
                                     body.get("qty", 0), body.get("type", "market"), body.get("limit"), body.get("stop"),

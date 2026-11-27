@@ -237,6 +237,57 @@ def test_retries_with_the_same_idempotency_key_place_once(d):
         d.order({**order, "authorized": False}, "no-auth")
 
 
+def test_an_order_placed_by_a_try_that_ended_before_its_record_is_answered_on_the_retry(d, clock):
+    """Item 14's review (A2): the paper order was placed (committed) and the try ended before the desk's row was written
+    (a kill, a stop, a crash). The retry under the same key found no row and was checked again: the checks counted the
+    order's own working buy, so its preview was out of date (409, and invalidated; expired, had two minutes passed). The
+    order stayed working with no record, and the client was told it failed. The paper order carries the key: the retry
+    finds it before the checks, records it as the try would have, and is answered with it, nothing placed again."""
+    acct = d.paper_id()
+    ask = {"account_id": acct, "symbol": "QQQ", "side": "buy", "quantity": 10, "price": 500}
+    place = d.book.place
+
+    def ends_after_placing(*a, **k):
+        place(*a, **k)
+        raise RuntimeError("the process ended here")  # the paper order committed, the desk's row never written
+
+    def ended(key, qty):
+        p = d.preview({**ask, "quantity": qty})
+        order = {**ask, "quantity": qty, "preview_id": p["id"], "authorized": True}
+        d.book.place = ends_after_placing
+        try:
+            with pytest.raises(RuntimeError):
+                d.order(order, key)
+        finally:
+            d.book.place = place
+        assert not d.conn.execute("SELECT 1 FROM desk_orders WHERE key=?", (key,)).fetchone()
+        return p, order
+
+    def placed_under(key):
+        return [r[0] for r in d.conn.execute("SELECT id FROM paper_orders WHERE client_id=?", (f"v1:{key}",))]
+
+    # retried at once: the checks would count its own working buy
+    p, order = ended("ended-1", 10)
+    again, placed = d.order(order, "ended-1")
+    (oid,) = placed_under("ended-1")  # one paper order: none placed again
+    assert not placed and again["status"] == "accepted" and again["order"]["id"] == oid and again["key"] == "ended-1"
+    assert again["orderStatus"] == "open" and d.preview_of(p["id"])["status"] == "used"
+    assert [e["kind"] for e in d.events(acct)["events"]].count("order.accepted") == 1
+    third, placed3 = d.order(order, "ended-1")  # recorded: from now on a retry as any other
+    assert not placed3 and third["order"]["id"] == oid
+    # retried after the preview's two minutes
+    p, order = ended("ended-2", 10)
+    clock["now"] = NOW + 121_000
+    again, placed = d.order(order, "ended-2")
+    assert not placed and again["order"]["id"] == placed_under("ended-2")[0] and d.preview_of(p["id"])["status"] == "used"
+    # another request under a key whose try ended so: refused, as it is with the row there, and nothing recorded
+    p, order = ended("ended-3", 5)
+    with pytest.raises(Conflict, match="another request's"):
+        d.order({**order, "quantity": 6}, "ended-3")
+    assert not d.conn.execute("SELECT 1 FROM desk_orders WHERE key='ended-3'").fetchone()
+    assert d.conn.execute("SELECT COUNT(*) FROM paper_orders").fetchone()[0] == 3
+
+
 def test_saving_a_thesis_never_submits_an_order(d):
     _ev(d, decision="paper_trade", rationale="a bounce")
     assert d.conn.execute("SELECT COUNT(*) FROM paper_orders").fetchone()[0] == 0
@@ -346,6 +397,18 @@ def test_the_v1_routes_on_the_charts_server(server):
     assert status == 200 and "order.accepted" in [e["kind"] for e in events["events"]]
     status, _ = _call(server, "GET", "/v1/nothing")
     assert status == 404
+
+
+def test_the_trading_ticket_takes_no_name_of_the_desks(server):
+    """The desk's paper orders are named v1:<its key>, and a retry whose try ended before its record takes the paper
+    order under that name for its own (A2): so the Trading ticket's names may not begin so."""
+    ticket = {"ticker": "SPCX", "side": "buy", "qty": 1, "type": "market"}
+    status, err = _call(server, "POST", "/api/trading/orders", {**ticket, "clientId": "v1:page-1"})
+    assert status == 400 and "Trading Desk" in err["error"]
+    status, trading = _call(server, "GET", "/api/trading")
+    assert trading["orders"] == []
+    status, o = _call(server, "POST", "/api/trading/orders", {**ticket, "clientId": "page-1"})
+    assert status == 201 and o["client_id"] == "page-1"
 
 
 def test_the_front_passes_v1_reads_to_the_integrator():

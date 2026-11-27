@@ -1002,6 +1002,8 @@ class Desk:
                 if json.loads(row[0]) != {**f, "preview": body.get("preview_id")}:
                     raise Conflict(f"idempotency key {key} is another request's")
                 return self._reconciled(key), False
+            if self._placed_unrecorded(key, account, f, body):  # a try that placed it ended before its row: kept now
+                return self._reconciled(key), False
             self._paper(account)
             if body.get("authorized") is not True:
                 raise NoAuthority("an order needs the client's explicit authorization (authorized: true)")
@@ -1036,6 +1038,38 @@ class Desk:
                 self._emit(account, f"order.{status}", {"key": key, "order": oid, "symbol": f["symbol"]}, now)
                 self._invalidate(account, f"order {oid or key} {status}", now)
             return self._reconciled(key), True
+
+    def _placed_unrecorded(self, key: str, account: str, f: dict, body: dict) -> bool:
+        """Whether a try under this key placed its paper order and ended before the desk's row was written (a crash, a
+        stop, a write that failed): the paper order carries the key (`client_id` v1:<key>) and outlives it. Recorded now
+        as that try would have (accepted, its preview used, its event), so the retry is answered with the order, as
+        any retry is. Looked for before the preview's checks: they count the order's own working buy and would refuse
+        the retry as out of date (or its preview as expired), the order left working with no record of it (item 14's
+        review, A2). An order under the key that is not this request's, or a preview for another order: Conflict."""
+        found = self.conn.execute("SELECT id FROM paper_orders WHERE client_id=? ORDER BY id LIMIT 1",
+                                  (f"v1:{key}",)).fetchone()
+        if found is None:
+            return False
+        o = self.book.order(found[0])
+        if (f"paper-{o['account']:02d}", o["ticker"], o["side"], o["qty"], o["type"], o["limit_px"]) != (
+                account, f["symbol"], f["side"], f["quantity"], f["type"], f["price"]):
+            raise Conflict(f"idempotency key {key} is another request's")
+        p = self.preview_of(str(body.get("preview_id") or ""))
+        if (p["order"]["account_id"], p["order"]["symbol"], p["order"]["side"], p["order"]["quantity"],
+                p["order"]["price"]) != (account, f["symbol"], f["side"], f["quantity"], f["price"]):
+            raise Conflict(f"preview {p['id']} is for another order")
+        result = {"status": "accepted", "broker": "paper", "order": o, "orderStatus": PAPER_STATUS[o["status"]]}
+        now = self.now()
+        with self.conn:
+            self.conn.execute("INSERT INTO desk_orders (key, account, preview, request, result, paper_order, status, "
+                              "created_at) VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?)",
+                              (key, account, int(p["id"][2:]), _j({**f, "preview": p["id"]}), _j(result), o["id"],
+                               o["placed_at"]))
+            self.conn.execute("UPDATE desk_previews SET status='used' WHERE id=?", (int(p["id"][2:]),))
+            self._emit(account, "order.accepted", {"key": key, "order": o["id"], "symbol": f["symbol"],
+                                                   "recorded": "after the try that placed it ended"}, now)
+            self._invalidate(account, f"order {o['id']} accepted", now)
+        return True
 
     def _reconciled(self, key: str) -> dict:
         """The order's answer, its status read again from the paper book (an event for each change)."""
