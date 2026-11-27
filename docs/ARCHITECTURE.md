@@ -1162,7 +1162,8 @@ quotes and closes; a broker's account only as `BrokerSnapshot`, an interface wit
 - **Previews** expire (120 s) and are invalidated by any change to what they checked (a reservation, an order, a rule).
 - **Orders** (`POST /v1/orders`) go to the paper account only: any other account answers 403 "real orders are off"
   (the user's rule). Each needs `authorized: true`, a current valid preview whose facts still hold, and an idempotency
-  key (a retry returns the first answer; the paper order's client id carries it across restarts).
+  key (a retry returns the first answer; the paper order's client id, `v1:<key>`, carries it across restarts: a try
+  that ended after placing the paper order and before recording it is answered with that order on the retry, 0.2.13).
 - **Unknown stays unknown**: a quote older than 15 minutes is shown stale with its value unknown; a market order then
   has no executable size; margin asks for the broker's terms, none connected, so the size is indeterminate.
 - **Events** (`GET /v1/events`): every change in order, read from a cursor.
@@ -1277,6 +1278,36 @@ Every order the Trading Desk sent from this page (8765) was refused 400: the fro
 (liminal-libs apps/binding.py FORWARDED) dropped the Idempotency-Key header the desk's routes ask for.
 liminal-libs 1.109.0 forwards it; this release raises the library's floor to 1.109.0 so the fix is
 here. The library's test calls forward() with a stand-in connection.
+
+### Item 14's review, the lesser findings (0.2.13, 2026-11-27)
+
+- **A Trading Desk order whose try ended before its record** (A2): `POST /v1/orders` places the paper order
+  (committed), then writes the desk's row. A try that ended in between (a kill, a stop, a crash, a write that failed)
+  left the order working with no record, and its retry was refused: its preview out of date (the checks counted the
+  order's own working buy) or expired. The paper order carries the key (`client_id` `v1:<key>`): the retry looks for
+  it before the checks, records it as that try would have (accepted, its preview used, `order.accepted`) and is
+  answered with it. An order under the key that is not the request's is a Conflict. The `v1:` names are the desk's:
+  the Trading ticket's route refuses a `clientId` that begins so (400).
+- **The Trading ticket's name kept** (A3): `clientId` was made new at every press, so no request ever carried a name
+  used before. It is kept for the ticket's contents until an order is placed with it: a press again after no answer
+  (or after a refusal, which placed nothing) sends the same name, and the app answers it with the order it placed.
+  Once placed, the next press is a new order under a new name. The paper account looks for a name in the current
+  account alone: after a reset, a name sent again places the order in the new account.
+- **The layout's save leaving the page** (A4): with a save on its way, the save leaving the page waited behind it, and
+  the page was gone before that answer came: the drawings made meanwhile were lost. Now it goes at once (keepalive
+  when it fits) when the page closes, or whenever the server says it writes a page's saves in order (`ordered` in
+  `GET /api/layouts`). Every save names its page (a name new at each load) and carries its generation (the changes
+  the page counted); `PUT /api/layouts/{id}` writes none older than one of the same page's it has written, and
+  answers it with the layout as it is (`older`). Another page's saves, a rename and a save naming no page are written
+  as they come. Under a server from before, a page that is only hidden waits its turn, as before.
+- **A login's session header** (A7): the front kept the login's session cookie from the integrator but passed on the
+  same session sent as `X-Liminal-Session`; it is kept at the front too.
+- **Words** (A8): the paper order's client id carries a Desk retry across restarts (A2, above), and the ticket's
+  name is sent again (A3). `set_store` saying that a pick naming an instance moves nothing holds: the library's
+  `stores.settle`, which the documents' pick runs, moves nothing for such a pick and only notes where new documents go.
+- Tests: tests/test_desk.py, tests/test_paper.py, tests/test_layouts.py, tests/test_front.py, and text assertions on
+  trading.js and app.js (tests/test_frontend_guards.py, tests/test_frontend_review.py); the two scripts were run in
+  headless Edge on stand-ins.
 
 ## State (2026-10-24)
 
