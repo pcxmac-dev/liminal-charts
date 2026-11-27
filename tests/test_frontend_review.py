@@ -761,7 +761,7 @@ def test_one_layout_save_at_a_time_the_newest_sent_after_the_one_on_its_way():
     fields = app.split("const layout = {", 1)[1].split("};", 1)[0]
     assert "saving: null," in fields and "queued: null," in fields and "again: null," in fields
     save = _function(app, "saveLayout")
-    assert save.index("if (layout.saving) return saveAfterThis(leaving);") < save.index("const gen = layout.generation;") \
+    assert save.index("if (layout.saving && !atOnce) return saveAfterThis(leaving);") < save.index("const gen = layout.generation;") \
         < save.index("target.data = snapshot();")  # the snapshot taken only when it is this save's turn
     assert save.index("layout.saving = new Promise((resolve) => { answered = resolve; });") < save.index("await apiWrite('PUT'")
     after_answer = save.split("} finally {", 1)[1]
@@ -774,6 +774,28 @@ def test_one_layout_save_at_a_time_the_newest_sent_after_the_one_on_its_way():
     assert after.index("layout.again = layout.queued = null;") < after.index("if (!layout.dirty) return undefined;") \
         < after.index("return saveLayout(again);")
     assert after.rstrip().endswith("return layout.queued;")  # every ask meanwhile shares the one save
+
+
+def test_the_save_leaving_the_page_goes_at_once_beside_one_on_its_way():
+    """Item 14's review (A4): the page closed while an autosave was on its way; the save leaving it was queued behind
+    that one, and the page was gone before its answer, so the queued save never went and the drawings made since were
+    lost. Now it goes at once (keepalive) when the page is closing, or whenever the server writes a page's saves by their
+    generation (its list says `ordered`: test_layouts.py has the server's side); each save names the page and carries
+    its generation. The script itself is run in headless Edge on stand-ins."""
+    app = _js("app.js")
+    save = _function(app, "saveLayout")
+    assert "async function saveLayout({ leaving = false, closing = false } = {}) {" in app
+    assert "const atOnce = leaving && (closing || layout.ordered);" in save
+    assert "const body = { data: target.data, page: LAYOUT_PAGE, generation: gen };" in save
+    # at once once its snapshot is taken and marked sent, where it would otherwise wait for the one on its way
+    assert save.index("layout.sent = gen;") < save.index("if (layout.saving) return sendLeaving(target, body, gen, keepalive);") \
+        < save.index("layout.saving = new Promise(")
+    leaving = _function(app, "sendLeaving")
+    assert "await apiWrite('PUT', `/api/layouts/${target.id}`, body, { keepalive });" in leaving
+    assert "layout.saving" not in leaving  # beside the one on its way: neither waits for the other
+    assert "if (layout.current === target && layout.generation === gen) layout.dirty = false;" in leaving
+    assert "saveLayout({ leaving: true, closing }).catch(() => {});" in _function(app, "saveOnLeave")
+    assert "layout.ordered = res.ordered === true;" in _function(app, "refreshLayoutList")
 
 
 def test_one_sign_in_opens_its_profile_once():

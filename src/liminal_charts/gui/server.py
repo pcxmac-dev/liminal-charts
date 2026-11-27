@@ -162,6 +162,9 @@ class ChartApp:
         self._recheck: tuple | None = None  # a publisher's limits recheck: (thread, {name, since})
         self._recheck_lock = threading.Lock()
         self._paper_lock = threading.RLock()  # the paper account (paper), opened on first use
+        # (profile, layout, page) -> the newest generation of that page's saves written (update_layout), the one
+        # touched longest ago dropped first past LAYOUT_SAVES_KEPT
+        self._layout_saves: OrderedDict[tuple, int] = OrderedDict()
         self._monitor_lock = threading.Lock()  # the Resources view's sampler, made on first use
         # Quiet: with no page in touch for QUIET_SECONDS every store is closed and every host let
         # go (release); the next request opens them again (using). The user, 2026-11-01: no open
@@ -1421,8 +1424,10 @@ class ChartApp:
     # -- layouts (saved markups): each profile's own ----------------------------------
 
     def layouts(self, profile: int = 1) -> dict:
+        """The profile's layouts, and `ordered`: a page's saves are written by their generation (update_layout), so
+        the page may send the one leaving it beside another still on its way (a server from before says nothing)."""
         with self._lock:
-            return {"layouts": self.store.list_layouts(profile), "max": self.store.MAX_LAYOUTS}
+            return {"layouts": self.store.list_layouts(profile), "max": self.store.MAX_LAYOUTS, "ordered": True}
 
     def layout(self, layout_id: int, profile: int = 1) -> dict:
         with self._lock:
@@ -1438,12 +1443,33 @@ class ChartApp:
         with self._lock:
             return self.store.create_layout(str(body.get("name", "")), data, profile)
 
+    LAYOUT_SAVES_KEPT = 256  # pages' newest generations kept (a small cache: a few tabs, at most 5 layouts a profile)
+
     def update_layout(self, layout_id: int, body: dict, profile: int = 1) -> dict:
+        """A layout saved. A page's save names the page (`page`, its own for each load) and its changes counted
+        (`generation`): one older than a save of the same page already written is not written, and answered with
+        the layout as it is (`older`). So two of a page's saves on their way at once (the one leaving the page sent
+        while another is still out, item 14's review, A4) may land in any order: the newer is kept. A save naming
+        no page (another client, a page from before) is written as it comes, as is every other page's."""
         data = body.get("data")
         if data is not None and not isinstance(data, dict):
             raise ValueError("data must be an object")
+        page, generation = body.get("page"), body.get("generation")
+        counted = data is not None and isinstance(page, str) and 0 < len(page) <= 64 and type(generation) is int
+        key = (profile, layout_id, page)
         with self._lock:
+            newest = self._layout_saves.get(key) if counted else None
+            if newest is not None and generation < newest:
+                found = self.store.get_layout(layout_id, profile)
+                if found is None:
+                    raise LookupError(f"no layout {layout_id}")
+                return {**found, "older": True}
             found = self.store.update_layout(layout_id, body.get("name"), data, profile)
+            if found is not None and counted:
+                self._layout_saves[key] = generation
+                self._layout_saves.move_to_end(key)
+                while len(self._layout_saves) > self.LAYOUT_SAVES_KEPT:
+                    self._layout_saves.popitem(last=False)
         if found is None:
             raise LookupError(f"no layout {layout_id}")
         return found

@@ -3694,6 +3694,7 @@ const layout = {
   saving: null,  // the save on its way (a promise settled once its answer is in), else null: one at a time
   queued: null,  // the save waiting for it: every ask meanwhile shares this one
   again: null,  // that save's options
+  ordered: false,  // the server writes this page's saves by their generation, never an older over a newer (its list says so)
   autosave: prefs.get('autosave', true),
   timer: null,
 };
@@ -3824,17 +3825,26 @@ const KEEPALIVE_MAX = 60 * 1024;  // the browser's 64 KiB for a request that out
 // One save at a time (the review of 2026-11-21, item 26): two saves on their way at once (the autosave, Ctrl+S,
 // the page hidden) could land out of order, the older snapshot last, so the server kept the older drawings while
 // the page showed itself clean. A save asked while one is on its way waits for its answer, then sends the newest
-// snapshot; every ask meanwhile shares that one save (saveAfterThis).
-async function saveLayout({ leaving = false } = {}) {
-  if (layout.saving) return saveAfterThis(leaving);
+// snapshot; every ask meanwhile shares that one save (saveAfterThis). But not the one leaving the page (item 14's
+// review, A4): the page may be gone before the answer it would wait for, and a save queued behind it goes with it,
+// so the drawings made since were lost. It goes at once (sendLeaving). Each save names this page and carries its
+// generation, and the server writes none older than a save of this page's it has written, so the two on their
+// way may land in any order: the newer is kept. A server from before says nothing of that (layout.ordered): then
+// only a page closing sends it at once (queued, it would never go); one only hidden waits its turn, as before.
+const LAYOUT_PAGE = window.crypto?.randomUUID ? crypto.randomUUID()
+  : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;  // this page's name, for its saves' order
+async function saveLayout({ leaving = false, closing = false } = {}) {
+  const atOnce = leaving && (closing || layout.ordered);
+  if (layout.saving && !atOnce) return saveAfterThis(leaving);
   const target = layout.current;
   if (!target) return;
   clearTimeout(layout.timer);
   const gen = layout.generation;
   target.data = snapshot();
-  const body = { data: target.data };
+  const body = { data: target.data, page: LAYOUT_PAGE, generation: gen };
   const keepalive = leaving && new TextEncoder().encode(JSON.stringify(body)).length <= KEEPALIVE_MAX;
   layout.sent = gen;  // on its way: leaving the page does not send it again
+  if (layout.saving) return sendLeaving(target, body, gen, keepalive);
   let saved;
   let answered;
   layout.saving = new Promise((resolve) => { answered = resolve; });
@@ -3851,6 +3861,21 @@ async function saveLayout({ leaving = false } = {}) {
   if (layout.current === target && layout.generation === gen) layout.dirty = false;
   renderLayoutButton();
   await refreshLayoutList();
+}
+
+// The save leaving the page while another is on its way: sent at once, beside it (outliving the page when it fits
+// in keepalive's 64 KiB), never waiting for it; its answer, if the page is still there for it, taken as any save's.
+async function sendLeaving(target, body, gen, keepalive) {
+  let saved;
+  try {
+    saved = await apiWrite('PUT', `/api/layouts/${target.id}`, body, { keepalive });
+  } catch (err) {
+    if (layout.sent === gen) layout.sent = null;
+    throw err;
+  }
+  Object.assign(target, { name: saved.name, updated_at: saved.updated_at });
+  if (layout.current === target && layout.generation === gen) layout.dirty = false;
+  renderLayoutButton();
 }
 
 // The save asked while one is on its way: after it, with the snapshot of then, once for all the asks meanwhile;
@@ -3872,6 +3897,7 @@ async function refreshLayoutList() {
   const res = await api('/api/layouts');
   layout.list = res.layouts;
   layout.max = res.max;
+  layout.ordered = res.ordered === true;
   renderLayoutButton();
 }
 
@@ -4041,7 +4067,7 @@ document.addEventListener('click', (e) => { if (!$('layoutMenu').contains(e.targ
 function saveOnLeave(closing) {
   if (!layout.dirty || !layout.current || layout.sent === layout.generation) return;
   if (!closing && !layout.autosave) return;  // only hidden, and autosave off: the user saves
-  saveLayout({ leaving: true }).catch(() => {});
+  saveLayout({ leaving: true, closing }).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveOnLeave(false); });
 window.addEventListener('pagehide', () => saveOnLeave(true));

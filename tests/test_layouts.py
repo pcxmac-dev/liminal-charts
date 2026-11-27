@@ -80,6 +80,41 @@ def test_layout_api(server):
     assert _req(server, "GET", f"/api/layouts/{made['id']}", header=False)[0] == 404
 
 
+def test_a_pages_older_save_is_not_written_over_its_newer(server):
+    """Item 14's review (A4): the save leaving a page goes at once, beside one still on its way, so the two may land in
+    either order. Each names its page and carries its generation (the changes the page counted): the server writes none
+    older than a save of the same page it has written, and answers it with the layout as it is (`older`); another
+    page's saves and a save naming no page are written as they come."""
+    lid = _req(server, "POST", "/api/layouts", {"name": "Desk", "data": {"drawings": {}}})[1]["id"]
+
+    def put(body):
+        status, got = _req(server, "PUT", f"/api/layouts/{lid}", body)
+        assert status == 200
+        return got
+
+    newer = put({"data": {"v": "newest"}, "page": "tab-a", "generation": 7})  # the one leaving the page, landed first
+    assert newer["data"] == {"v": "newest"} and "older" not in newer
+    late = put({"data": {"v": "older"}, "page": "tab-a", "generation": 5})  # the one that was on its way, after it
+    assert late["older"] is True and late["data"] == {"v": "newest"} and late["name"] == "Desk"
+    assert _req(server, "GET", f"/api/layouts/{lid}", header=False)[1]["data"] == {"v": "newest"}
+    assert put({"data": {"v": "again"}, "page": "tab-a", "generation": 7})["data"] == {"v": "again"}  # sent twice
+    assert put({"data": {"v": "tab b"}, "page": "tab-b", "generation": 1})["data"] == {"v": "tab b"}
+    assert put({"data": {"v": "a client"}})["data"] == {"v": "a client"}
+    assert put({"data": {"v": "older still"}, "page": "tab-a", "generation": 6})["older"] is True
+    assert put({"name": "Desk 2", "page": "tab-a", "generation": 1})["name"] == "Desk 2"  # a rename: never held back
+    # the page sends the save leaving it beside another only to a server that says it writes them so
+    assert _req(server, "GET", "/api/layouts", header=False)[1]["ordered"] is True
+
+
+def test_the_pages_generations_kept_are_bounded(store):
+    app = ChartApp(store)
+    lid = store.create_layout("Desk", {})["id"]
+    for i in range(app.LAYOUT_SAVES_KEPT + 40):
+        app.update_layout(lid, {"data": {"i": i}, "page": f"page-{i}", "generation": 3})
+    assert len(app._layout_saves) == app.LAYOUT_SAVES_KEPT
+    assert (1, lid, "page-0") not in app._layout_saves and (1, lid, f"page-{app.LAYOUT_SAVES_KEPT + 39}") in app._layout_saves
+
+
 def test_layout_writes_need_header_and_local_host(server):
     assert _req(server, "POST", "/api/layouts", {"name": "x", "data": {}}, header=False)[0] == 403
     assert _req(server, "POST", "/api/layouts", {"name": "x", "data": {}}, host="evil.example")[0] == 403
