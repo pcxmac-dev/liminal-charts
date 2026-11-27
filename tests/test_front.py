@@ -491,6 +491,53 @@ def test_the_front_links_the_platform_through_the_icon_bridge(tmp_path, monkeypa
     assert front_mod.platform_url() == "http://127.0.0.1:8775"
 
 
+class PlatformRecording(PlatformStandIn):
+    """The platform recording the headers of each request it was handed (names in lower case)."""
+
+    seen: list[dict] = []
+
+    def do_GET(self):
+        PlatformRecording.seen.append({k.lower(): v for k, v in self.headers.items()})
+        super().do_GET()
+
+    def do_POST(self):
+        PlatformRecording.seen.append({k.lower(): v for k, v in self.headers.items()})
+        super().do_POST()
+
+
+def test_the_front_keeps_a_logins_session_header_from_the_platform(tmp_path, monkeypatch):
+    """0.2.14 (item 14): a login's session sent as the header (X-Liminal-Session: a LoginClient program, the Desk's
+    other clients) stayed at the front for the integrator (A7), but went on through the platform's link: a live
+    session's token handed to another process, perhaps on another machine. Of the browser's cookies only the
+    platform's own travel, told by their names; the header has one name whichever login's session it carries, and
+    nothing sends the platform's own so (its pages sign in by its cookie), so it stays here too. The rest goes as
+    before: the platform's cookie, the write header, the body."""
+    PlatformRecording.seen = []
+    up = ThreadingHTTPServer(("127.0.0.1", 0), PlatformRecording)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    monkeypatch.setenv("LIMINAL_PLATFORM_URL", f"http://127.0.0.1:{up.server_address[1]}")
+    monkeypatch.setenv("LIMINAL_FETCHER_PORT", "none")
+    monkeypatch.setenv("LIMINAL_LOGIN_URL", "none")
+    srv, port = _serve(Front(tmp_path / "liminal.db", log=lambda m: None))
+    try:
+        assert _get(port, "/platform/api/echo", {"X-Liminal-Session": "a-live-token",
+                                                 "Cookie": "liminal_login_platform=p"})[0] == 200
+        conn = HTTPConnection("127.0.0.1", port)
+        conn.request("POST", "/platform/api/x", body=json.dumps({"a": 1}),
+                     headers={"Content-Type": "application/json", "X-Liminal-Charts": "1",
+                              "X-Liminal-Session": "a-live-token"})
+        r = conn.getresponse()
+        assert r.status == 200 and json.loads(r.read()) == {"got": {"a": 1}, "write": "1"}
+        got, posted = PlatformRecording.seen
+        assert "x-liminal-session" not in got and got["cookie"] == "liminal_login_platform=p"
+        assert "x-liminal-session" not in posted and posted["x-liminal-charts"] == "1"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        up.shutdown()
+        up.server_close()
+
+
 class Profiles(BaseHTTPRequestHandler):
     """The integrator's data API as far as the front's profile check needs it: the charts' profiles."""
 

@@ -437,11 +437,18 @@ def make_front_handler(front: Front):
         def _linked(self, method: str) -> None:
             """The request passed on to the platform this front links, as /<the rest> (liminal_libs.apps.forward): its
             answer and its cookies back, their path narrowed to /platform; of the browser's cookies only the platform's
-            own travel (it may be on another machine). Not running: the page is told; nothing is started from here.
-            Passed on at once, no answer asked of it first (one reach of another machine per request, not two)."""
+            own travel (it may be on another machine), and no login's session header. Not running: the page is told;
+            nothing is started from here. Passed on at once, no answer asked of it first (one reach of another machine
+            per request, not two)."""
             path = self.path[len(PLATFORM_PREFIX):]
             if not path or path.startswith("?"):
                 path = "/" + path
+            # the session header stays here too (0.2.14, as for the integrator: _proxy). The cookies are told apart by
+            # their names, the platform's own alone passed on; the header has one name whichever login's session it
+            # carries (the charts' own, a LoginClient program's), and nothing sends the platform's own so through here
+            # (its pages sign in by its cookie): passed on, a live session's token went to the platform, perhaps on
+            # another machine
+            del self.headers[SESSION_HEADER]
             forward(self, method, platform_url() or PLATFORM_URL, path, cookie_path=PLATFORM_PREFIX,
                     keep_cookies=PLATFORM_COOKIES,
                     unavailable="the platform is not running (nothing answers at its address): its pages show here once "
