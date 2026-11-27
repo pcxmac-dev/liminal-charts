@@ -9,7 +9,7 @@ from pathlib import Path
 
 import liminal_libs
 
-__version__ = "0.2.11"
+__version__ = "0.2.12"
 liminal_libs.limit_threads()  # before numpy loads (and again on a reload of this package)
 # The GitHub-hosted datasets' git submodules stay in this repository (data/github): the library reads
 # them from here unless LIMINAL_DATA_REPOS says where else.

@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "liminal-charts"
-version = "0.2.11"
+version = "0.2.12"
 description = "The Liminal chart app: the chart page and its data views, served by a front that funnels every request to the fetcher (liminal-integrator), on liminal-libs."
 readme = "README.md"
 requires-python = ">=3.10"
 # the library (the stores, the plugin contract, the collector, the scheme: liminal-libs) brings the
 # data dependencies (pandas below 3.1, numpy, requests, exchange_calendars, duckdb, pymongo, plotly)
 dependencies = [
-    "liminal-libs @ git+https://github.com/pcxmac-dev/liminal-libs@release/0.2.0",  # at least 1.91.0 (0.2.9: a store's pick naming an instance, stores.py; 0.2.8: the platform core ChartsApp inherits, apps/platform.py; a URL takes no version here, so the floor is the branch's and the import's); 1.42.0: touch.js (touch screens, the on-screen keyboard); since 1.7.0: the class contract (API 2.0), the plugin selection, the core classes, the data specs (API 2.1), the apps' frame, renamed
+    "liminal-libs @ git+https://github.com/pcxmac-dev/liminal-libs@release/0.2.0",  # at least 1.109.0 (0.2.12: the front forwards a Trading Desk order's Idempotency-Key, apps/binding.py; 0.2.9: a store's pick naming an instance, stores.py; 0.2.8: the platform core ChartsApp inherits, apps/platform.py; a URL takes no version here, so the floor is the branch's and the import's); 1.42.0: touch.js (touch screens, the on-screen keyboard); since 1.7.0: the class contract (API 2.0), the plugin selection, the core classes, the data specs (API 2.1), the apps' frame, renamed
 ]
 
 [project.optional-dependencies]

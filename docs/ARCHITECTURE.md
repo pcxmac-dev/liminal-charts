@@ -1271,6 +1271,13 @@ answers of 2026-11-26.
 - Tests: text assertions on the page's files (`tests/test_page_standard.py`); the scripts themselves run in headless
   Edge on stand-ins.
 
+### A Trading Desk order through the front (0.2.12, 2026-11-26; Monday list item 14)
+
+Every order the Trading Desk sent from this page (8765) was refused 400: the front's forward
+(liminal-libs apps/binding.py FORWARDED) dropped the Idempotency-Key header the desk's routes ask for.
+liminal-libs 1.109.0 forwards it; this release raises the library's floor to 1.109.0 so the fix is
+here. The library's test calls forward() with a stand-in connection.
+
 ## State (2026-10-24)
 
 Already separated: data sources behind one interface (`sources/`), coverage planning
