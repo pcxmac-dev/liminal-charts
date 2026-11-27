@@ -5,7 +5,10 @@
    products (a search, a sector filter); on the right the insight of the venue (open now or not, its
    products by sector, how much of them is collected and how freshly, the feeds and the delivery
    scheme behind it, the last session's movers) or of the product picked (the symbol panel's
-   /api/info), with a button to open it in the chart. Asked again every minute while shown. */
+   /api/info), with a button to open it in the chart. Asked again every minute while shown.
+   0.2.11 (the user, 2026-11-26): with the library's side.js the venue stays at the right-hand menu's top and a product
+   picked is told under it, in words alone (productSpec), its buttons (back to the venue, Open chart) in that part
+   (viewside.js's own pick), never in the top. Without side.js the product's insight takes the side, as before. */
 (() => {
   const box = document.getElementById('viewExchanges');
   const { esc } = window.LiminalIcons;
@@ -152,9 +155,43 @@
       ${open}`;
   }
 
+  // 0.2.11: the product picked, told under its venue in words alone (side.js's pick: every word escaped there), and
+  // its buttons, the view's own markup, in that part after them
+  const productKey = () => `product:${picked}`;
+  function productSpec() {
+    const row = list?.products.find((p) => p.ticker === picked);
+    const key = productKey();
+    if (!info) return { key, title: picked, sub: row?.name || '', note: 'Loading…' };
+    if (info.error) {
+      return { key, title: picked, sub: row?.name || '',
+               note: `No bars stored yet${row?.synced ? '' : ': it has not been fetched'}. Opening it in the chart asks for it first.` };
+    }
+    const sym = info.symbol, st = info.stats || {}, d = info.data || {};
+    const chg = st.changePct ?? (st.prevClose ? ((st.last / st.prevClose - 1) * 100) : null);
+    const facts = [['Last', `${price(st.last)}${chg == null ? '' : ` ${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`}`]];
+    if (st.asOf) facts.push(['Last day', when(new Date(st.asOf).toISOString())]);
+    if (st.range52w) facts.push(['52 weeks', `${price(st.range52w.low)} – ${price(st.range52w.high)}, ${num(st.range52w.sessions)} sessions`]);
+    if (st.rangeAll) facts.push(['All stored', `${price(st.rangeAll.low)} – ${price(st.rangeAll.high)}, ${num(st.sessions)} sessions`]);
+    const feeds = (d.feeds || []).map((f) => (typeof feedLabel === 'function' ? feedLabel(f) : f)).join(' > ');
+    facts.push(['Data', `${d.base || '–'}${feeds ? ` · ${feeds}` : ''} · ${num(d.rows)} bars`]);
+    if (d.first) facts.push(['Stored', `${d.first.slice(0, 10)}${d.last ? ` to ${d.last.slice(0, 10)}` : ''}`]);
+    if (info.futures) facts.push(['Continuous', `holding ${info.futures.contract}, ${num(info.futures.rolls)} rolls`]);
+    if (sym.exchangeName) facts.push(['Listed on', `${sym.exchangeName}${sym.listed ? ` since ${sym.listed}` : ''}`]);
+    return { key, title: sym.ticker, sub: [sym.asset, sym.name || row?.name || ''].filter(Boolean).join(' · '), facts };
+  }
+  const productButtons = () => `<button type="button" data-back="1">← ${esc(venue()?.name || 'Exchange')}</button>
+    <button type="button" class="primary ex-open" data-open="${esc(picked)}">Open chart</button>`;
+  // its row in the middle (a phone's "Back to the row"), found by its words: a ticker is no selector's (BRK.B, ^GSPC)
+  const productRow = () => [...box.querySelectorAll('.ex-list tr[data-product]')].find((tr) => tr.dataset.product === picked) || null;
+  const ownPick = () => (picked ? { spec: { ...productSpec(), from: productRow() }, buttons: productButtons(), letGo: letProductGo } : null);
+  function letProductGo() {  // the panel let the product go (its x, Esc): the venue's products as they were
+    if (!picked) return;
+    picked = null; info = null; render();
+  }
+
   function sideHtml() {
     const v = venue();
-    if (picked) return productInsight();
+    if (picked && !window.ViewSide?.on) return productInsight();  // no side.js: the product's insight the whole side
     return v ? venueInsight(v) : '<div class="empty">Pick an exchange.</div>';
   }
 
@@ -178,7 +215,8 @@
 
   const SCOPE = () => `exchanges:${sel}`;
   // 0.2.11 (Monday list item 31): the side the right-hand menu's top, a row of the middle told under it (viewside.js)
-  const paintSide = (c, side, b) => (window.ViewSide ? window.ViewSide.paint(c, side, render, b, SCOPE()) : window.Views.patch(c, side, render));
+  // 0.2.11 (the user, 2026-11-26): the product picked told under the venue, its buttons with it (ownPick)
+  const paintSide = (c, side, b) => (window.ViewSide ? window.ViewSide.paint(c, side, render, b, SCOPE(), ownPick()) : window.Views.patch(c, side, render));
   function paint([left, middle, side]) {
     const [a, b, c] = box.children;
     if (box.children.length !== 3 || !a.matches('.ex-venues') || !b.matches('.ex-list') || !c.matches('.ex-side')) {

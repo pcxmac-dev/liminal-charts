@@ -1246,6 +1246,31 @@ internal.py, ui/static/internal.js; GET /api/app/apis), as the platform's page h
   answer, none of it drawn under the charts' name), an integrator with no route or card of its own, a data API
   without ?plugin= (404). The integrator's page is read once per process: its entry and tabs come with its restart.
 
+### The right-hand menu by the page standard (0.2.11, 2026-11-26; Monday list item 31)
+
+The user, 2026-11-22: "the right hand menu holds the 'tool' selected on the left hand menu in the top portion of it's
+menu. However, if there is amplifying information selected from the main screen (in between) it shows up as amplifying
+information underneath the plugin or tools' info in the right hand menu, this needs to be global for all apps too". On
+liminal-libs 1.105.0's page standard (docs/PAGES.md, ui/static/standard.json, ui/static/side.js), with the user's
+answers of 2026-11-26.
+
+- **The chart views**: the right-hand menu's top (`#pTool`) names the drawing tool picked on the left, its symbol and
+  what it reports (the cursor: the price, time and bar under it); the pane's own sections follow. The rules' charts
+  groups name app.js's drawing tools and panels.js's views (`tests/test_page_standard.py`).
+- **A view with no chart puts the cursor back** (the user's answer): the drawing tools are held only with a chart view
+  (standard.json's `{with: {view: chart}}`), so at every view shown (panels.js's liminal:view) app.js asks the rules
+  (`LiminalSide.standard.after`) and a view with no chart sets the cursor again, a drawing begun let go; between chart
+  views the tool stays. A view the rules do not name (a bound app's page), or a library without side.js: by its kind.
+- **Plugins, Databases and Exchanges** (the integrator's page too): the one picked on the left at the panel's top,
+  patched as before, and a plain row of the middle told in full under it (`viewside.js`), alike in the three.
+- **An exchange's product** (the user's answer): told under its venue, which stays at the top, as a pick of words alone
+  (side.js's spec: every word escaped), its buttons (back to the venue, Open chart) in that part after the words,
+  never in the top (viewside.js's own pick, `paint(..., own)`); its x, Esc, the back button or a row picked lets it
+  go. Without side.js the product's insight takes the side, as before.
+- **Codebase** is mounted with the panel (codebase.js through codeview.js), a repository picked under it.
+- Tests: text assertions on the page's files (`tests/test_page_standard.py`); the scripts themselves run in headless
+  Edge on stand-ins.
+
 ## State (2026-10-24)
 
 Already separated: data sources behind one interface (`sources/`), coverage planning

@@ -4,8 +4,13 @@
 // the integrator's page, which is these views. Loaded after panels.js (Views.patch) and before the views.
 //
 //   ViewSide.on                                 the library's side.js is here (else each view draws its side whole)
-//   ViewSide.paint(aside, html, again, middle, scope)  the side drawn into the panel's top (Views.patch), the middle's
-//                                               plain rows keyed and picked, the pick told anew from them
+//   ViewSide.paint(aside, html, again, middle, scope, own)  the side drawn into the panel's top (Views.patch), the
+//                                               middle's plain rows keyed and picked, the pick told anew from them;
+//                                               own (0.2.11, the user's answer of 2026-11-26): a pick of the view's own,
+//                                               {spec, buttons, letGo} or null (an exchange's product): told under the
+//                                               top as words alone (spec: side.js's, every word escaped), the view's
+//                                               buttons (its markup) in a part of their own after them, never in the
+//                                               top; letGo() when the panel lets it go (its x, Esc, another pick)
 //
 // A row is picked when it is a plain row of a table in the middle: not one that is itself a pick of the view's own
 // (a product, a database, a venue, a plugin: data-product, data-db, data-venue, data-plugin, data-open) and not one
@@ -57,7 +62,39 @@
     return null;
   }
 
-  function paint(aside, html, again, middle, scope) {
+  // the view's own pick told under the top: its words through the panel (a pick like a row's), then its buttons in a
+  // part of their own (.side-pick-actions, drawn again only when they changed; the panel's drawing of the words takes
+  // the part with it, so it is put back after them). None: the view's own pick let go, a row's left as it is
+  const ownKey = new WeakMap(), letGoOf = new WeakMap();
+  function tellOwn(panel, aside, own) {
+    letGoOf.set(aside, own && own.letGo ? own.letGo : null);
+    if (!aside.dataset.ownWired) {
+      aside.dataset.ownWired = '1';
+      aside.addEventListener('liminal:pick', (e) => {  // the panel let the view's own pick go (x, Esc, a row picked)
+        const was = ownKey.get(panel);
+        if (was == null || (e.detail && e.detail.key === was)) return;
+        ownKey.delete(panel);
+        const letGo = letGoOf.get(aside);
+        if (letGo) letGo();
+      });
+    }
+    if (!own || !own.spec) {
+      const was = ownKey.get(panel);
+      ownKey.delete(panel);
+      if (was != null && panel.picked && panel.picked.key === was) panel.unpick();
+      return;
+    }
+    const spec = Object.assign({}, own.spec, { key: String(own.spec.key) });
+    ownKey.set(panel, spec.key);
+    panel.pick(spec);
+    const slot = panel.slots.pick;
+    let bar = slot.querySelector(':scope > .side-pick-actions');
+    if (!bar) { bar = document.createElement('div'); bar.className = 'side-pick-actions'; slot.append(bar); }
+    const buttons = String(own.buttons || '');
+    if (bar.dataset.drawn !== buttons) { bar.innerHTML = buttons; bar.dataset.drawn = buttons; }
+  }
+
+  function paint(aside, html, again, middle, scope, own) {
     if (!S) { window.Views.patch(aside, html, again); return null; }
     const app = window.FETCHER_MODE ? 'integrator' : 'charts';
     const panel = S.panel(aside, { app });
@@ -71,8 +108,13 @@
     if (middle) {
       keyRows(middle);
       S.rows(middle, { selector: 'tr[data-pick]', panel, describe: (tr) => S.fromRow(tr) });
-      panel.refresh((key) => { const tr = rowOf(middle, key); return tr ? S.fromRow(tr) : null; });
+      panel.refresh((key) => {
+        if (own && own.spec && String(own.spec.key) === key) return own.spec;  // the view's own: told by it
+        const tr = rowOf(middle, key);
+        return tr ? S.fromRow(tr) : null;
+      });
     }
+    tellOwn(panel, aside, own || null);
     return panel;
   }
 

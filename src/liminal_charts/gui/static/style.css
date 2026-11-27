@@ -1065,6 +1065,9 @@ main > .view.ex-view:not([hidden]) { display: grid; }
 .ex-price { font-size: 20px; margin: 8px 0 2px; }
 .ex-back button { font-size: 11px; padding: 2px 6px; margin-bottom: 6px; }
 .ex-open { margin-top: 12px; }
+/* 0.2.11: a product picked, under its venue: its buttons after its words (viewside.js's own pick) */
+.side-pick-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.side-pick-actions .ex-open { margin-top: 0; }
 .pl-all { width: 100%; margin: 4px 0 2px; }
 .pl-note-line { margin: 4px 0; }
 .ex-state.pl-ready { color: var(--up); border-color: var(--up); }

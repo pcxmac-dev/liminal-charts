@@ -60,6 +60,44 @@ def test_the_right_hand_menus_top_names_the_drawing_tool_and_the_cursor():
     assert "renderTool(s);" in PANELS.split("function renderCursor() {", 1)[1].split("\n  }", 1)[0]
 
 
+def test_a_view_with_no_chart_puts_the_drawing_tool_back_to_the_cursor():
+    """The user, 2026-11-26: the drawing tool goes back to the cursor when a view with no chart is shown, as the rules
+    say (standard.json's {with: {view: chart}}), a drawing begun let go; between chart views it stays. Asked of the
+    rules through side.js's twin (LiminalSide.standard.after) at every view shown (panels.js's liminal:view); the
+    script itself is run in headless Edge on stand-ins."""
+    assert standard.after("charts", {"drawing": ["segment"]}, "view", "markets")["drawing"] == ["cursor"]
+    assert standard.after("charts", {"drawing": ["segment"]}, "view", "analysis")["drawing"] == ["segment"]
+    body = APP.split("function toolForView(pane, view) {", 1)[1].split("\n}", 1)[0]
+    assert "rules.after('charts', { drawing: [tool] }, 'view', pane).drawing[0] || 'cursor'" in body
+    assert "return view === 'chart' ? tool : 'cursor';" in body  # no rules, or a view they do not name
+    listen = APP.split("window.addEventListener('liminal:view', (e) => {", 1)[1].split("\n});", 1)[0]
+    assert "toolForView(e.detail?.pane, e.detail?.view)" in listen and "startDrawing(tool)" in listen
+    assert "window.dispatchEvent(new CustomEvent('liminal:view', { detail: { pane: name, view } }));" in PANELS
+
+
+def test_an_exchanges_product_is_told_under_its_venue_in_words_its_buttons_with_it():
+    """The user, 2026-11-26: on Exchanges a product picked is told under its venue as a pick of words alone (side.js's
+    spec, every word escaped there), its buttons (back to the venue, Open chart) moved into that part, never into the
+    panel's top, which keeps the venue; without side.js the product's insight takes the side as before. The scripts
+    themselves are run in headless Edge on stand-ins (viewside-check)."""
+    code = (STATIC / "venues.js").read_text(encoding="utf-8")
+    side = code.split("function sideHtml() {", 1)[1].split("\n  }", 1)[0]
+    assert "if (picked && !window.ViewSide?.on) return productInsight();" in side  # the top: the venue
+    spec = code.split("function productSpec() {", 1)[1].split("\n  }", 1)[0]
+    assert "<" not in spec.replace("=>", "").replace("? ", "")  # words alone: no markup of its own
+    assert "return { key, title: sym.ticker, sub:" in spec and "facts.push(['Data'," in spec
+    buttons = code.split("const productButtons = () => `", 1)[1].split("`;", 1)[0]
+    assert 'data-back="1"' in buttons and 'data-open="${esc(picked)}"' in buttons
+    assert "spec: { ...productSpec(), from: productRow() }, buttons: productButtons(), letGo: letProductGo" in code
+    vs = (STATIC / "viewside.js").read_text(encoding="utf-8")
+    tell = vs.split("function tellOwn(panel, aside, own) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "panel.pick(spec);" in tell and "bar.className = 'side-pick-actions'; slot.append(bar);" in tell
+    assert "if (was != null && panel.picked && panel.picked.key === was) panel.unpick();" in tell
+    assert "aside.addEventListener('liminal:pick'," in tell and "if (letGo) letGo();" in tell
+    assert "tellOwn(panel, aside, own || null);" in vs
+    assert "if (own && own.spec && String(own.spec.key) === key) return own.spec;" in vs  # told by the view, not gone
+
+
 def test_codebase_is_mounted_with_the_panel():
     code = (STATIC / "codeview.js").read_text(encoding="utf-8")
     assert "window.LiminalSide ? window.LiminalSide.panel(sideEl, { app: window.FETCHER_MODE ? 'integrator' : 'charts' }) : null" in code
@@ -73,7 +111,8 @@ def test_the_three_column_views_tell_a_row_of_their_middle_under_their_side():
     for view in ("plugins.js", "databases.js", "venues.js"):
         assert HTML.index('src="viewside.js"') < HTML.index(f'src="{view}"')
         code = (STATIC / view).read_text(encoding="utf-8")
-        assert "window.ViewSide.paint(c, side, render, b, SCOPE())" in code, view
+        own = ", ownPick()" if view == "venues.js" else ""  # 0.2.11: an exchange's product, the view's own pick
+        assert f"window.ViewSide.paint(c, side, render, b, SCOPE(){own})" in code, view
         assert "paintSide(c, side, b);" in code and "window.Views.patch(c, side, render);" not in code.replace(
             ": window.Views.patch(c, side, render));", ""), view
         assert "<aside class=\"ex-side\">${window.ViewSide?.on ? '' : side}</aside>" in code, view

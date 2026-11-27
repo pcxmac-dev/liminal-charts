@@ -3542,6 +3542,21 @@ function setActiveTool(name) {
 // its symbol (the same as its button's); the page standard's charts drawing tools (liminal-libs standard.json)
 window.drawingTools = TOOLS.filter(Boolean).map(([name, title]) => ({ name, title: title.replace(/ \((Esc|Alt\+H)\)/, '').split(':')[0], icon: svg(name) }));
 window.activeDrawingTool = 'cursor';
+// 0.2.11 (the user, 2026-11-26; the page standard, liminal-libs standard.json: a drawing tool is held only with a chart
+// view, {with: {view: chart}}): a view with no chart puts the cursor back, a drawing begun let go. The rules say which
+// (LiminalSide.standard.after); a view they do not name, or a library without side.js: no chart, the cursor.
+function toolForView(pane, view) {
+  const tool = window.activeDrawingTool || 'cursor';
+  try {
+    const rules = window.LiminalSide?.standard;
+    if (rules) return rules.after('charts', { drawing: [tool] }, 'view', pane).drawing[0] || 'cursor';
+  } catch { /* a view the rules do not name (a bound app's page) */ }
+  return view === 'chart' ? tool : 'cursor';
+}
+window.addEventListener('liminal:view', (e) => {
+  const tool = toolForView(e.detail?.pane, e.detail?.view);
+  if (tool !== window.activeDrawingTool || (tool === 'cursor' && state.drawingId)) startDrawing(tool);
+});
 
 const MAGNET_MODES = ['normal', 'weak_magnet', 'strong_magnet'];
 
