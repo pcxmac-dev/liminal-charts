@@ -182,6 +182,48 @@ def test_the_front_funnels_its_pages_requests_to_the_integrator(tmp_path, monkey
         srv.server_close()
 
 
+class Recording(Upstream):
+    """The integrator's data API recording the headers of each request it was handed (names in lower case)."""
+
+    seen: list[dict] = []
+
+    def do_GET(self):
+        Recording.seen.append({k.lower(): v for k, v in self.headers.items()})
+        super().do_GET()
+
+    def do_POST(self):
+        Recording.seen.append({k.lower(): v for k, v in self.headers.items()})
+        super().do_POST()
+
+
+def test_the_front_keeps_a_logins_session_header_here(tmp_path, monkeypatch):
+    """Item 14's review (A7): the login's session cookie stays at the front, but the same session sent as the header
+    (X-Liminal-Session: a LoginClient program, the Desk's other clients) was handed on to the integrator as it came, a
+    live session's token given to another process. It stays here too; what the integrator needs still goes: the
+    profile, the write header, and a Trading Desk order's Idempotency-Key (A1)."""
+    Recording.seen = []
+    up = ThreadingHTTPServer(("127.0.0.1", 0), Recording)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    monkeypatch.setenv("LIMINAL_FETCHER_PORT", str(up.server_address[1]))
+    monkeypatch.setenv("LIMINAL_LOGIN_URL", "none")
+    srv, port = _serve(Front(tmp_path / "liminal.db", log=lambda m: None))
+    try:
+        assert _get(port, "/api/echo", {"X-Liminal-Session": "a-live-token", "X-Liminal-Profile": "3"})[0] == 200
+        conn = HTTPConnection("127.0.0.1", port)
+        conn.request("POST", "/v1/orders", body=json.dumps({"account_id": "paper-01"}),
+                     headers={"Content-Type": "application/json", "X-Liminal-Charts": "1",
+                              "X-Liminal-Session": "a-live-token", "Idempotency-Key": "k1"})
+        assert conn.getresponse().status == 202
+        got, posted = Recording.seen
+        assert "x-liminal-session" not in got and got["x-liminal-profile"] == "3"
+        assert "x-liminal-session" not in posted and posted["x-liminal-charts"] == "1" and posted["idempotency-key"] == "k1"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        up.shutdown()
+        up.server_close()
+
+
 def test_the_front_holds_the_login_it_inherits_and_draws_its_tray(tmp_path, monkeypatch):
     """The login the charts app inherits: an object of the login class the front holds (its superclass the charts
     app, the one thing it points to), answered under /login/ at the front's own port with its cookies, its tray in

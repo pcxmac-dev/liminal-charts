@@ -42,7 +42,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from liminal_libs import config
-from liminal_libs.apps import PAIRS_PATH, Binding, PortTaken, forward, pairs_wanted, serve_object
+from liminal_libs.apps import PAIRS_PATH, SESSION_HEADER, Binding, PortTaken, forward, pairs_wanted, serve_object
 from liminal_libs.apps.app import APIS_PATH
 from liminal_libs.apps import databases as db_section
 from liminal_libs.apps.platform import ELSEWHERE
@@ -413,8 +413,12 @@ def make_front_handler(front: Front):
                 return self._json({"error": f"the integrator is not running (nothing answers at its port): {front.name} "
                                             "has no data to show until it is started; nothing is started from here"},
                                   HTTPStatus.SERVICE_UNAVAILABLE)
+            # a login's session stays here: its cookie (drop_cookies), and the same session sent as the header
+            # (X-Liminal-Session: a LoginClient program, the Desk's other clients), which the library's forward passes
+            # on with the headers it names (item 14's review, A7: a live session's token handed to another process)
+            del self.headers[SESSION_HEADER]
             forward(self, method, f"http://127.0.0.1:{port}", self.path, drop_cookies=("liminal_login",),
-                    unavailable="the integrator does not answer; ask again shortly")  # a login's session stays here
+                    unavailable="the integrator does not answer; ask again shortly")
 
         def _login(self, method: str) -> None:
             """The request answered by the login held here, as /<the rest> (liminal_libs.apps.serve_object): its
