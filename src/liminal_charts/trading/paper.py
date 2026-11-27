@@ -163,24 +163,26 @@ class PaperBook:
     def place(self, ticker: str, source: str, side: str, qty: float, type: str, limit: float | None = None,
               stop: float | None = None, tif: str = "day", now_ms: int | None = None,
               client_id: str | None = None) -> dict:
-        """A paper order placed. `client_id`: the page's name for this attempt; a repeat of it returns the order it
-        placed rather than placing another (the same order only: another under that name is refused)."""
+        """A paper order placed. `client_id`: the page's name for this attempt; a repeat of it in the same account
+        returns the order it placed rather than placing another (the same order only: another under that name is
+        refused). Looked for in the account alone (item 14's review, A3): after a reset a name sent again places the
+        order in the new account, never answers with the old account's."""
         qty, limit, stop = check_order(side, qty, type, limit, stop, tif)
         ticker = (ticker or "").strip().upper()
         if not ticker:
             raise ValueError("a symbol is needed")
+        acct = self.account()["id"]
         if client_id is not None and "client_id" in self._cols:
             if not isinstance(client_id, str) or not 0 < len(client_id) <= 64:
                 raise ValueError("a client order id is a name of 1 to 64 characters")
-            row = self.conn.execute("SELECT * FROM paper_orders WHERE client_id=? ORDER BY id LIMIT 1",
-                                    (client_id,)).fetchone()
+            row = self.conn.execute("SELECT * FROM paper_orders WHERE client_id=? AND account=? ORDER BY id LIMIT 1",
+                                    (client_id, acct)).fetchone()
             if row is not None:
                 done = self._row(row)
                 if (done["ticker"], done["side"], done["qty"], done["type"]) != (ticker, side, qty, type):
                     raise ValueError(f"client order id {client_id} is another order's")
                 return done
         now = now_ms or _now()
-        acct = self.account()["id"]
         # a series it cannot fill from (the composite, a continuous future) is refused here, not
         # stored to break every later match (ValueError, as the route answers 400)
         self.bars_after(source or "*", ticker, now, now)

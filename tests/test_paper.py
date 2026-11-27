@@ -241,6 +241,19 @@ def test_an_order_sent_again_under_its_client_id_is_placed_once(book):
     assert book.place("SPCX", "*", "buy", 1, "market", now_ms=T0)["id"] != book.place("SPCX", "*", "buy", 1, "market", now_ms=T0)["id"]
 
 
+def test_a_client_id_is_looked_for_in_the_account_alone(book):
+    """Item 14's review (A3): the name was looked for in every account, so after a reset a name sent again was answered
+    with the old account's order (cancelled by the reset), and nothing was placed in the new one."""
+    old = book.place("SPCX", "*", "buy", 10, "market", now_ms=T0, client_id="attempt-1")
+    book.reset(50_000, now_ms=T0 + MIN)
+    new = book.place("SPCX", "*", "buy", 10, "market", now_ms=T0 + 2 * MIN, client_id="attempt-1")
+    assert new["id"] != old["id"] and new["account"] == book.account()["id"] != old["account"]
+    assert new["status"] == "working" and book.order(old["id"])["status"] == "cancelled"
+    again = book.place("SPCX", "*", "buy", 10, "market", now_ms=T0 + 3 * MIN, client_id="attempt-1")
+    assert again["id"] == new["id"]  # in its own account, a repeat is answered with its order, as before
+    assert [o["id"] for o in book.summary(T0 + 3 * MIN)["orders"]] == [new["id"]]
+
+
 def test_a_file_made_before_client_ids_gets_the_column(tmp_path):
     conn = sqlite3.connect(tmp_path / "old.db")
     conn.executescript(paper.SCHEMA.replace("looked_to   INTEGER,", "looked_to   INTEGER").replace(
